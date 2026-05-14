@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Noto CSMap（検索ラベル・クラスタ同期・土砂災害・地価〈令和7年〉）</title>
+<title>Gifu CSMap（検索ラベル・クラスタ同期・土砂災害・地価等）</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-search@3.0.9/dist/leaflet-search.min.css">
@@ -38,7 +38,9 @@ function loadScript(src){return new Promise((ok,ng)=>{const s=document.createEle
 
 function init(){
   const msg = document.getElementById('msg'); if (msg) msg.remove();
-  const map = L.map('map').setView([37.3,136.9],11);
+  
+  // 【変更点1】初期の表示座標を石川県から岐阜県周辺（緯度35.5, 経度137.0）に変更
+  const map = L.map('map').setView([35.5, 137.0], 11);
 
   // --- panes ---
   map.createPane('boundaryPane');  map.getPane('boundaryPane').style.zIndex = 421;
@@ -47,9 +49,16 @@ function init(){
   map.createPane('markersPane');   map.getPane('markersPane').style.zIndex = 430;
 
   // --- base layers ---
-  const baseNoto = L.tileLayer('https://rinya.geospatial.jp/tile/csmaptile_noto/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© 林野庁'}).addTo(map);
+  // 【変更点2】岐阜県のCS立体図URL（.webp）に変更
+  const baseGifu = L.tileLayer('https://forestgeo.info/opendata/21_gifu/csmap_2023/{z}/{x}/{y}.webp',{maxZoom:18,attribution:'© 岐阜県'}).addTo(map);
+  
+  // 【変更点3】今昔マップ（中京編・明治期）のURLを追加
+  const konjakuChukyo = L.tileLayer('https://ktgis.net/kjmapw/kjtilemap/nagoya/2bl/{z}/{x}/{y}.png', {maxZoom:18, attribution:'© 今昔マップ on the web'});
+
   const gsiPale  = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png',{maxZoom:18,opacity:.6,pane:'palePane',attribution:'© 国土地理院'});
-  const ctl = L.control.layers({'Noto CSMap':baseNoto},{'国土地理院地図':gsiPale},{collapsed:false}).addTo(map);
+  
+  // レイヤコントロールに今昔マップを追加
+  const ctl = L.control.layers({'岐阜県 CS立体図':baseGifu, '今昔マップ（中京）':konjakuChukyo},{'国土地理院地図（透過）':gsiPale},{collapsed:false}).addTo(map);
   L.control.scale({position:'bottomleft',imperial:false}).addTo(map);
 
   // ---- helpers ----
@@ -102,7 +111,7 @@ function init(){
 
     const s1 = new L.Control.Search({layer: boundaryLayer, propertyName:'大字', textPlaceholder:'大字名', marker:false, zoom:14, collapsed:false}).addTo(map);
     addTag(s1,'📚 大字','#2e7d32');
-  });
+  }).catch(() => console.log('kyoukai.geojsonがありません'));
 
   // ===== 指定避難場所（初期ON・クラスタ同期） =====
   fetch('./17000_1.geojson',{cache:'no-store'}).then(r=>r.json()).then(data=>{
@@ -114,12 +123,12 @@ function init(){
         const m=L.marker(latlng,{icon}); m.options.title=p._shelter_name; return m; },
       onEachFeature:(f,l)=>l.bindPopup(`<b>指定避難場所</b><br>${Object.entries(f.properties??{}).map(([k,v])=>`<b>${k}:</b> ${v}`).join('<br>')}`)
     });
-    const cluster = registerClusterOverlay('指定避難場所（更新：令和7年7月9日）', shelters);
+    const cluster = registerClusterOverlay('指定避難場所', shelters);
 
     const s3 = new L.Control.Search({layer: shelters, propertyName:'_shelter_name', textPlaceholder:'施設・場所名', marker:false, zoom:17, collapsed:false}).addTo(map);
     addTag(s3,'🏠 避難所','#388e3c');
     s3.on('search:locationfound', e=>{ if(e.latlng) map.setView(e.latlng, Math.max(map.getZoom(),17)); if(e.layer.openPopup) e.layer.openPopup(); });
-  });
+  }).catch(() => console.log('17000_1.geojsonがありません'));
 
   // ===== ため池（初期ON・クラスタ同期） =====
   fetch('./ため池.geojson',{cache:'no-store'}).then(r=>r.json()).then(data=>{
@@ -138,7 +147,7 @@ function init(){
     const s4 = new L.Control.Search({layer: ponds, propertyName:'_pond_name', textPlaceholder:'ため池名', marker:false, zoom:18, collapsed:false}).addTo(map);
     addTag(s4,'💧 ため池','#1976d2');
     s4.on('search:locationfound', e=>{ if(e.latlng) map.setView(e.latlng, Math.max(map.getZoom(),18)); if(e.layer.openPopup) e.layer.openPopup(); });
-  });
+  }).catch(() => console.log('ため池.geojsonがありません'));
 
   // ===== バス停（初期ON・クラスタ同期） =====
   fetch('./P11-22_17.geojson?_=now',{cache:'no-store'}).then(r=>r.json()).then(data=>{
@@ -149,16 +158,16 @@ function init(){
       pointToLayer:(f,latlng)=>{ const p=f.properties??{}; p._bus_name = pickName(p); const m=L.marker(latlng,{icon:ic}); m.options.title=p._bus_name; return m; },
       onEachFeature:(f,l)=>{ const p=f.properties??{}, n=p._bus_name ?? ''; const skip=new Set(['名称','停留所名','バス停名','name','Name','停名','停留所']);
         const rest=Object.entries(p).filter(([k])=>!skip.has(k) && k!=='_bus_name').map(([k,v])=>`<b>${k}:</b> ${v}`).join('<br>');
-        l.bindPopup(`<b>バス停（令和4年）</b>${n?`<br><b>名称:</b> ${n}`:''}${rest?`<br>${rest}`:''}`); }
+        l.bindPopup(`<b>バス停</b>${n?`<br><b>名称:</b> ${n}`:''}${rest?`<br>${rest}`:''}`); }
     });
-    registerClusterOverlay('バス停（令和4年）', buses);
+    registerClusterOverlay('バス停', buses);
 
     const s5 = new L.Control.Search({layer: buses, propertyName:'_bus_name', textPlaceholder:'バス停名', marker:false, zoom:18, collapsed:false}).addTo(map);
     addTag(s5,'🚌 バス停','#6a1b9a');
     s5.on('search:locationfound', e=>{ if(e.latlng) map.setView(e.latlng, Math.max(map.getZoom(),18)); if(e.layer.openPopup) e.layer.openPopup(); });
-  });
+  }).catch(() => console.log('P11-22_17.geojsonがありません'));
 
-  // ===== 地価（令和7年・石川／検索UIなし・クラスタ同期） =====
+  // ===== 地価（初期ON・クラスタ同期） =====
   fetch('./石川地価2025.geojson?_=r7',{cache:'no-store'}).then(r=>r.json()).then(data=>{
     const icon = L.icon({iconUrl:'https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-orange.png',
                          shadowUrl:'https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-shadow.png',
@@ -183,7 +192,7 @@ function init(){
         const no    = pickKey(p,['標準地番号','標準地番号（コード）','地点番号','番号',/標準地/]);
         const note  = pickKey(p,['備考','注記','メモ']);
         let html =
-          `<b>地価調査（令和7年）</b><br>`+
+          `<b>地価調査</b><br>`+
           `<b>標準地番号:</b> ${no||'-'}<br>`+
           `<b>所在地:</b> ${[city,where].filter(Boolean).join(' ')||'-'}<br>`+
           `<b>用途:</b> ${use||'-'}<br>`+
@@ -197,8 +206,8 @@ function init(){
         l.bindPopup(html);
       }
     });
-    registerClusterOverlay('地価調査（令和7年・石川）', land);
-  });
+    registerClusterOverlay('地価調査地点', land);
+  }).catch(() => console.log('地価データがありません'));
 
   // ===== 土砂災害（初期ON・一番下） =====
   fetch('./dosya.geojson',{cache:'no-store'}).then(r=>r.json()).then(data=>{
@@ -217,17 +226,17 @@ function init(){
 
     const s2 = new L.Control.Search({layer: danger, propertyName:'title', textPlaceholder:'箇所番号 / 箇所名', marker:false, zoom:16, collapsed:false}).addTo(map);
     addTag(s2,'⚠️ 土砂災害','#e53935');
-  });
+  }).catch(() => console.log('dosya.geojsonがありません'));
 
   // 凡例
   const legend=L.control({position:'bottomright'});
   legend.onAdd=()=>{const d=L.DomUtil.create('div','legend'); d.innerHTML =
     '<i style="background:#ffff00;"></i> イエローゾーン<br>'+
     '<i style="background:#ff0000;"></i> レッドゾーン<br>'+
-    '<img src="https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-green.png" style="height:18px;vertical-align:middle;margin-right:6px;"> 指定避難場所（令和7年7月9日）<br>'+
+    '<img src="https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-green.png" style="height:18px;vertical-align:middle;margin-right:6px;"> 指定避難場所<br>'+
     '<img src="https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-blue.png" style="height:18px;vertical-align:middle;margin-right:6px;"> ため池<br>'+
-    '<span style="font-size:18px;vertical-align:middle;margin-right:6px;">🚌</span> バス停（令和4年）<br>'+
-    '<img src="https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-orange.png" style="height:18px;vertical-align:middle;margin-right:6px;"> 地価調査（令和7年）';
+    '<span style="font-size:18px;vertical-align:middle;margin-right:6px;">🚌</span> バス停<br>'+
+    '<img src="https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-orange.png" style="height:18px;vertical-align:middle;margin-right:6px;"> 地価調査';
     return d;};
   legend.addTo(map);
 
