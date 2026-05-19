@@ -180,4 +180,35 @@ function init(){
 
   // その他の面データ (初期表示はOFF)
   const otherStyles = {
-    '大規模盛土.geojson': {name: '大規模盛土（2
+    '大規模盛土.geojson': {name: '大規模盛土（2023年）', color: '#d84315'},
+    '小学校区.geojson': {name: '小学校区（2023年）', color: '#2e7d32', dash: '5,5'}
+  };
+  Object.entries(otherStyles).forEach(([file, opt]) => {
+    fetch('./' + file).then(r=>r.json()).then(data => {
+      const l = L.geoJSON(data, {
+        pane: file.includes('区') ? 'boundaryPane' : 'zonesPane',
+        style: {color: opt.color, weight: 2, dashArray: opt.dash || '', fillOpacity: 0.2},
+        onEachFeature: (f, l) => l.bindPopup(makePopup(opt.name, f.properties))
+      });
+      ctl.addOverlay(l, opt.name);
+    }).catch(()=>null);
+  });
+
+  // 凡例の更新
+  const legend=L.control({position:'bottomright'});
+  legend.onAdd=()=>{const d=L.DomUtil.create('div','legend'); d.innerHTML =
+    '🐻 熊出没（過去５年）<br>'+
+    '<i class="fa-solid fa-person-running" style="color:#2e7d32;"></i> 避難所<br>'+
+    '<i class="fa-solid fa-car-side" style="color:#6a1b9a;"></i> 道の駅（全国2018年）<br>'+
+    '🚌 バス停（2023年）<br>'+
+    '<i class="fa-solid fa-yen-sign" style="color:#e65100;"></i> 地価（2025年）<br>'+
+    '<i style="background:#ffff00;opacity:0.7;border:1px solid #cca300;"></i> 土砂災害：イエローゾーン<br>'+
+    '<i style="background:#ff0000;opacity:0.7;border:1px solid #cc0000;"></i> 土砂災害：レッドゾーン';
+    return d;};
+  legend.addTo(map);
+
+  if(L.control.locate){ L.control.locate({position:'topleft',flyTo:true,strings:{title:'現在地を表示'},locateOptions:{enableHighAccuracy:true}}).addTo(map); }
+}
+</script>
+</body>
+</html>
