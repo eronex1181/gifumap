@@ -44,9 +44,9 @@ function init(){
   // --- ベースマップ（CS立体図 ＆ 今昔マップ） ---
   const baseGifu = L.tileLayer('https://forestgeo.info/opendata/21_gifu/csmap_2023/{z}/{x}/{y}.webp',{maxZoom:18,attribution:'© 岐阜県'}).addTo(map);
   
-  // 今昔マップ（明治期 1888-1898）※HTTPSに変更し、{-y}を使用
+  // 今昔マップ（明治期 1888-1898）
   const konjakuM = L.tileLayer('https://ktgis.net/kjmapw/kjtilemap/chukyo/2man/{z}/{x}/{-y}.png', {maxZoom:16, attribution:'© 今昔マップ on the web'});
-  // 今昔マップ（昭和中期 1959-1960）※おまけで追加
+  // 今昔マップ（昭和中期 1959-1960）
   const konjakuS = L.tileLayer('https://ktgis.net/kjmapw/kjtilemap/chukyo/04/{z}/{x}/{-y}.png', {maxZoom:16, attribution:'© 今昔マップ on the web'});
 
   const gsiPale = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png',{maxZoom:18,opacity:.6,pane:'palePane',attribution:'© 国土地理院'});
@@ -95,7 +95,7 @@ function init(){
     } catch(e) { console.log(filename + " はスキップされました"); }
   };
 
-  // 画像2にあったファイル名をすべて指定！
+  // 各GeoJSONファイルの読み込み指定
   loadLayer('避難所.geojson', '避難所', {cluster: true, color: 'green'});
   loadLayer('道の駅.geojson', '道の駅', {cluster: true, color: 'violet'});
   loadLayer('バス停.geojson', 'バス停', {cluster: true, iconHtml: '🚌'});
@@ -105,7 +105,7 @@ function init(){
   loadLayer('大規模盛土.geojson', '大規模盛土', {pane: 'zonesPane', style: {color: '#d84315', weight: 2, fillOpacity: 0.4}});
   loadLayer('小学校区.geojson', '小学校区', {pane: 'boundaryPane', style: {color: '#2e7d32', weight: 2, dashArray: '5,5', fillOpacity: 0.1}});
 
-  // part1〜part4 があれば結合して表示する処理
+  // 【修正】part1〜part4 を結合し、色分けと日本語変換を行って「土砂災害（特別）警戒区域」として表示
   Promise.all(['part1.geojson','part2.geojson','part3.geojson','part4.geojson'].map(f=>fetch('./'+f,{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null)))
   .then(results => {
     const valid = results.filter(r=>r);
@@ -113,14 +113,48 @@ function init(){
       const combined = { type: "FeatureCollection", features: valid.flatMap(d=>d.features) };
       const layer = L.geoJSON(combined, {
         pane: 'zonesPane',
-        style: {color: '#c62828', weight: 2, fillOpacity: 0.3},
-        onEachFeature: (f,l) => l.bindPopup(makePopup('分割データ(part1-4)', f.properties))
+        // 【修正】ポリゴンの塗り分け設定
+        style: (f) => {
+          const zoneVal = f.properties.A33_002;
+          let col = '#888888';
+          // 区分1, 3はイエロー / 2, 4はレッド
+          if (zoneVal == 1 || zoneVal == 3 || zoneVal == '1' || zoneVal == '3') col = '#ffff00';
+          if (zoneVal == 2 || zoneVal == 4 || zoneVal == '2' || zoneVal == '4') col = '#ff0000';
+          return {color: col, fillColor: col, weight: 1.5, fillOpacity: 0.4};
+        },
+        // 【修正】ポップアップ表示用のデータ変換設定
+        onEachFeature: (f, l) => {
+          const p = f.properties ?? {};
+          const displayProps = {};
+
+          // 現象コードの変換 (1→急傾斜、2→土石流、3→地すべり)
+          if (p.A33_001 == 1 || p.A33_001 == '1') displayProps['現象'] = '急傾斜';
+          else if (p.A33_001 == 2 || p.A33_001 == '2') displayProps['現象'] = '土石流';
+          else if (p.A33_001 == 3 || p.A33_001 == '3') displayProps['現象'] = '地すべり';
+          else if (p.A33_001) displayProps['現象'] = p.A33_001;
+
+          // 区分コードの変換 (1,3→イエローゾーン、2,4→レッドゾーン)
+          if (p.A33_002 == 1 || p.A33_002 == 3 || p.A33_002 == '1' || p.A33_002 == '3') displayProps['区分'] = 'イエローゾーン';
+          else if (p.A33_002 == 2 || p.A33_002 == 4 || p.A33_002 == '2' || p.A33_002 == '4') displayProps['区分'] = 'レッドゾーン';
+          else if (p.A33_002) displayProps['区分'] = p.A33_002;
+
+          // 元のA33_001, A33_002以外の属性情報（箇所名や市町村名など）をコピー
+          Object.entries(p).forEach(([k, v]) => {
+            if (k !== 'A33_001' && k !== 'A33_002') {
+              displayProps[k] = v;
+            }
+          });
+
+          l.bindPopup(makePopup('土砂災害（特別）警戒区域', displayProps));
+        }
       });
-      map.addLayer(layer); ctl.addOverlay(layer, '分割データ（part1〜4）');
+      map.addLayer(layer); 
+      // 【修正】右上のメニュー名を変更
+      ctl.addOverlay(layer, '土砂災害（特別）警戒区域');
     }
   });
 
-  // --- 新しい凡例（新しいデータに合わせて変更） ---
+  // --- 【修正】新しい凡例 ---
   const legend=L.control({position:'bottomright'});
   legend.onAdd=()=>{const d=L.DomUtil.create('div','legend'); d.innerHTML =
     '<img src="https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-green.png" style="height:18px;vertical-align:middle;margin-right:6px;"> 避難所<br>'+
@@ -130,7 +164,8 @@ function init(){
     '<i style="background:#1e88e5;height:4px;margin-top:8px;"></i> バスルート<br>'+
     '<i style="background:#d84315;opacity:0.4;"></i> 大規模盛土<br>'+
     '<i style="background:#2e7d32;opacity:0.1;border:1px dashed #2e7d32;"></i> 小学校区<br>'+
-    '<i style="background:#c62828;opacity:0.3;"></i> 分割データ(part1-4)';
+    '<i style="background:#ffff00;opacity:0.7;border:1px solid #cca300;"></i> 土砂災害：イエローゾーン<br>'+
+    '<i style="background:#ff0000;opacity:0.7;border:1px solid #cc0000;"></i> 土砂災害：レッドゾーン';
     return d;};
   legend.addTo(map);
 
