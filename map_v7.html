@@ -15,7 +15,6 @@
   html,body{height:100%;margin:0}
   #map{height:100%;background:#f3f3f3}
   
-  /* 凡例のデザイン */
   .legend{background:#fff;box-shadow:0 0 15px rgba(0,0,0,.2);border-radius:5px;}
   .legend-header{padding:8px 12px;cursor:pointer;font-weight:bold;font-size:14px;background:#f8f9fa;text-align:center;color:#333;border-radius:5px;}
   .legend-content{padding:8px 12px;line-height:22px;}
@@ -65,7 +64,6 @@ function init(){
     maxZoom:17, opacity: 0.7, attribution:'© 国土地理院'
   });
 
-  // 【修正箇所①】右上のレイヤー切り替えメニュー
   const ctl = L.control.layers({
     '国土地理院（淡色）': gsiPale,
     '国土地理院（航空写真）': gsiPhoto,
@@ -74,7 +72,6 @@ function init(){
     '岐阜県CS立体図（2022年）': baseGifu,
     '洪水浸水想定区域（想定最大規模2020年）': floodL2
   }, {
-    // スマホなど画面幅が狭い場合（600px未満）は最初から折りたたむ（アイコン化する）
     collapsed: window.innerWidth < 600
   }).addTo(map);
   
@@ -154,14 +151,12 @@ function init(){
       }).addTo(map); 
       ctl.addOverlay(layer, '土砂災害（特別）警戒区域（2025年）');
 
-      // 【修正箇所②】土砂災害の検索ボックス
       const searchCtrl = new L.Control.Search({
         layer: layer,
         propertyName: '_searchKey',
         textPlaceholder: '箇所番号 / 箇所名 / 住所',
         marker: false,
         zoom: 16,
-        // スマホなど画面幅が狭い場合（600px未満）は最初から折りたたむ（虫眼鏡アイコンにする）
         collapsed: window.innerWidth < 600,
         initial: false 
       }).addTo(map);
@@ -193,7 +188,7 @@ function init(){
     }).catch(()=>null);
   });
 
-  // 凡例（折りたたみ機能付き・変更なし）
+  // 凡例
   const legend = L.control({position:'bottomright'});
   legend.onAdd = () => {
     const d = L.DomUtil.create('div','legend');
@@ -244,12 +239,26 @@ function init(){
 
   if(L.control.locate){ L.control.locate({position:'topleft',flyTo:true,strings:{title:'現在地を表示'},locateOptions:{enableHighAccuracy:true}}).addTo(map); }
 
+  // 【修正箇所】地名・住所検索機能をより確実な通信方式（fetch）へ変更
   const geocoder = new L.Control.Search({
-    url: 'https://nominatim.openstreetmap.org/search?format=json&q={s}',
-    jsonpParam: 'json_callback',
-    propertyName: 'display_name',
-    propertyLoc: ['lat','lon'],
-    textPlaceholder: '地名 / 住所 / 施設名を入力（例: 大明神）',
+    sourceData: function(text, callResponse) {
+      // 古いJSONP通信ではなく、最新のfetchで確実にデータを取得する
+      fetch('https://nominatim.openstreetmap.org/search?format=json&accept-language=ja&q=' + encodeURIComponent(text))
+        .then(response => response.json())
+        .then(data => {
+          const results = {};
+          // ヒットした候補を変換
+          data.forEach(item => {
+            results[item.display_name] = L.latLng(item.lat, item.lon);
+          });
+          callResponse(results);
+        })
+        .catch(err => {
+          console.error('地名検索エラー:', err);
+          callResponse({});
+        });
+    },
+    textPlaceholder: '地名 / 住所 / 施設名を入力（例: 中津川駅）',
     collapsed: true, 
     autoType: false,
     minLength: 2,
