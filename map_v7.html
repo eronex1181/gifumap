@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.81.0/dist/L.Control.Locate.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-search@3.0.9/dist/leaflet-search.min.css">
 <style>
   html,body{height:100%;margin:0}
   #map{height:100%;background:#f3f3f3}
@@ -20,6 +21,8 @@
     background: white; border-radius: 50%; border: 2px solid #333;
     transform: translate(-15px, -15px); box-shadow: 0 2px 5px rgba(0,0,0,0.3);
   }
+  /* 追加：検索ボックスのラベル装飾 */
+  .search-tag{display:inline-block;margin:6px 6px 4px 6px;padding:2px 8px;border-radius:999px;font-size:12px;color:#fff;background:#e53935;line-height:1.4;vertical-align:middle;font-weight:bold;}
 </style>
 </head>
 <body>
@@ -33,6 +36,8 @@ function loadScript(src){return new Promise((ok,ng)=>{const s=document.createEle
          catch{ await loadScript("https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"); } }
   await loadScript("https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.81.0/dist/L.Control.Locate.min.js");
   await loadScript("https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js");
+  // 追加：検索用のJavaScript
+  await loadScript("https://cdn.jsdelivr.net/npm/leaflet-search@3.0.9/dist/leaflet-search.min.js");
   init();
 })();
 
@@ -50,18 +55,15 @@ function init(){
   const gsiPhoto = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg',{maxZoom:18,attribution:'© 国土地理院'});
   const konjakuM = L.tileLayer('https://ktgis.net/kjmapw/kjtilemap/chukyo/2man/{z}/{x}/{-y}.png', {maxZoom:16, attribution:'© 今昔マップ'});
 
-  // --- 重ねるタイルデータ（初期状態はOFF） ---
+  // --- 重ねるタイルデータ ---
   const baseGifu = L.tileLayer('https://forestgeo.info/opendata/21_gifu/csmap_2023/{z}/{x}/{y}.webp',{
     maxZoom:18, opacity: 0.6, pane: 'csPane', attribution:'© 岐阜県'
   });
   
-  // 新規追加：洪水・内水ハザードマップ（国土地理院）透過率を0.7に設定して下の地図を見えやすく
   const floodL2 = L.tileLayer('https://disaportaldata.gsi.go.jp/raster/01_flood_l2_shinsuishin_data/{z}/{x}/{y}.png',{
     maxZoom:17, opacity: 0.7, attribution:'© 国土地理院'
   });
-  const naisui = L.tileLayer('https://disaportaldata.gsi.go.jp/raster/02_naisui_pref_data/21/{z}/{x}/{y}.png',{
-    maxZoom:17, opacity: 0.7, attribution:'© 国土地理院'
-  });
+  // ※内水浸水想定区域は削除しました
 
   const ctl = L.control.layers({
     '国土地理院（淡色）': gsiPale,
@@ -69,14 +71,16 @@ function init(){
     '今昔マップ（明治期）': konjakuM
   }, {
     '岐阜県CS立体図（2022年）': baseGifu,
-    '洪水浸水想定区域（想定最大規模2020年）': floodL2,
-    '内水（雨水出水）浸水想定区域（2020年）': naisui
+    '洪水浸水想定区域（想定最大規模2020年）': floodL2
   }, {collapsed:false}).addTo(map);
   L.control.scale({position:'bottomleft',imperial:false}).addTo(map);
 
   // --- ポップアップヘルパー ---
   const makePopup = (title, props) => {
-    let rows = Object.entries(props).map(([k,v])=>`<tr><th style="white-space:nowrap;padding-right:8px;border-bottom:1px solid #ccc;text-align:left;">${k}</th><td style="border-bottom:1px solid #ccc;">${v}</td></tr>`).join('');
+    let rows = Object.entries(props).map(([k,v])=> {
+      if(k === '_searchKey') return ''; // 検索用の隠し文字はポップアップに出さない
+      return `<tr><th style="white-space:nowrap;padding-right:8px;border-bottom:1px solid #ccc;text-align:left;">${k}</th><td style="border-bottom:1px solid #ccc;">${v}</td></tr>`;
+    }).join('');
     return `<b>${title}</b><br><div style="max-height:250px;overflow:auto;"><table style="border-collapse:collapse;font-size:12px;">${rows}</table></div>`;
   };
 
@@ -104,17 +108,14 @@ function init(){
     } catch(e) { console.log(filename + " 読み込み失敗"); }
   };
 
-  // 1. 熊出没 (絵文字の🐻アイコン・少し大きめ・デフォルトON)
+  // 各種ピンデータ
   loadLayer('kuma.geojson', '熊出没（過去５年）', {iconHtml: '🐻', iconColor: '#5d4037', fontSize: '20px', defaultOn: true});
-  
-  // 2. ピンデータ (初期表示はOFF)
   loadLayer('避難所.geojson', '避難所', {iconHtml: '<i class="fa-solid fa-person-running"></i>', iconColor: '#2e7d32'});
   loadLayer('道の駅.geojson', '道の駅（全国2018年）', {iconHtml: '<i class="fa-solid fa-car-side"></i>', iconColor: '#6a1b9a'});
   loadLayer('バス停.geojson', 'バス停（2023年）', {iconHtml: '🚌'});
-  // 3. 地価データの復活
   loadLayer('地価調査.geojson', '地価（2025年）', {iconHtml: '<i class="fa-solid fa-yen-sign"></i>', iconColor: '#e65100'});
 
-  // 土砂災害データ (デフォルトON)
+  // 土砂災害データ
   Promise.all(['part1.geojson','part2.geojson','part3.geojson','part4.geojson'].map(f=>fetch('./'+f,{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null)))
   .then(results => {
     const valid = results.filter(r=>r);
@@ -130,6 +131,13 @@ function init(){
         onEachFeature: (f, l) => {
           const p = f.properties ?? {};
           const d = {};
+          
+          // 【追加】検索用の隠しキーワードを作成（箇所番号＋箇所名＋住所 を全部くっつける）
+          const num = p['箇所番号'] || p.A33_004 || '';
+          const name = p['箇所名'] || p.A33_005 || '';
+          const addr = p['住所'] || p['所在地'] || p.A33_009 || '';
+          p._searchKey = `${num} ${name} ${addr}`.trim(); // ←ここで合体！
+
           Object.entries(p).forEach(([k, v]) => {
             if (k === '現象' || k === 'A33_001') {
               let n = v;
@@ -145,6 +153,28 @@ function init(){
         }
       }).addTo(map); // 【デフォルトON】
       ctl.addOverlay(layer, '土砂災害（特別）警戒区域（2025年）');
+
+      // 【追加】検索ボックスのコントロールを設定
+      const searchCtrl = new L.Control.Search({
+        layer: layer,                   // 検索対象のレイヤー
+        propertyName: '_searchKey',     // 先ほど作った合体キーワードを対象にする
+        textPlaceholder: '箇所番号 / 箇所名 / 住所', // 入力欄の薄い文字
+        marker: false,                  // 検索結果に赤い丸を出さない
+        zoom: 16,                       // 検索ヒット時にズームする倍率
+        collapsed: false                // 最初から入力欄を開いておく
+      }).addTo(map);
+
+      // ヒットした時にポップアップを自動で開く
+      searchCtrl.on('search:locationfound', function(e) {
+        if(e.layer.openPopup) e.layer.openPopup();
+      });
+
+      // 検索ボックスに「⚠️土砂災害検索」のタグをくっつける装飾
+      const el = searchCtrl._container || searchCtrl.getContainer();
+      const tag = document.createElement('span'); 
+      tag.className = 'search-tag'; 
+      tag.textContent = '⚠️ 土砂災害検索'; 
+      (el.querySelector('form')||el).insertBefore(tag, el.firstChild);
     }
   });
 
@@ -164,7 +194,7 @@ function init(){
     }).catch(()=>null);
   });
 
-  // 凡例の更新（地価の追加など）
+  // 凡例の更新
   const legend=L.control({position:'bottomright'});
   legend.onAdd=()=>{const d=L.DomUtil.create('div','legend'); d.innerHTML =
     '🐻 熊出没（過去５年）<br>'+
