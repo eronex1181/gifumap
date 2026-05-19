@@ -21,7 +21,7 @@
     background: white; border-radius: 50%; border: 2px solid #333;
     transform: translate(-15px, -15px); box-shadow: 0 2px 5px rgba(0,0,0,0.3);
   }
-  /* 追加：検索ボックスのラベル装飾 */
+  /* 検索ボックスのラベル装飾 */
   .search-tag{display:inline-block;margin:6px 6px 4px 6px;padding:2px 8px;border-radius:999px;font-size:12px;color:#fff;background:#e53935;line-height:1.4;vertical-align:middle;font-weight:bold;}
 </style>
 </head>
@@ -36,7 +36,7 @@ function loadScript(src){return new Promise((ok,ng)=>{const s=document.createEle
          catch{ await loadScript("https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"); } }
   await loadScript("https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.81.0/dist/L.Control.Locate.min.js");
   await loadScript("https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js");
-  // 追加：検索用のJavaScript
+  // 検索用のJavaScript
   await loadScript("https://cdn.jsdelivr.net/npm/leaflet-search@3.0.9/dist/leaflet-search.min.js");
   init();
 })();
@@ -63,7 +63,6 @@ function init(){
   const floodL2 = L.tileLayer('https://disaportaldata.gsi.go.jp/raster/01_flood_l2_shinsuishin_data/{z}/{x}/{y}.png',{
     maxZoom:17, opacity: 0.7, attribution:'© 国土地理院'
   });
-  // ※内水浸水想定区域は削除しました
 
   const ctl = L.control.layers({
     '国土地理院（淡色）': gsiPale,
@@ -132,11 +131,11 @@ function init(){
           const p = f.properties ?? {};
           const d = {};
           
-          // 【追加】検索用の隠しキーワードを作成（箇所番号＋箇所名＋住所 を全部くっつける）
+          // 検索用の隠しキーワードを作成（箇所番号＋箇所名＋住所 を全部くっつける）
           const num = p['箇所番号'] || p.A33_004 || '';
           const name = p['箇所名'] || p.A33_005 || '';
           const addr = p['住所'] || p['所在地'] || p.A33_009 || '';
-          p._searchKey = `${num} ${name} ${addr}`.trim(); // ←ここで合体！
+          p._searchKey = `${num} ${name} ${addr}`.trim(); 
 
           Object.entries(p).forEach(([k, v]) => {
             if (k === '現象' || k === 'A33_001') {
@@ -154,14 +153,15 @@ function init(){
       }).addTo(map); // 【デフォルトON】
       ctl.addOverlay(layer, '土砂災害（特別）警戒区域（2025年）');
 
-      // 【追加】検索ボックスのコントロールを設定
+      // 検索ボックスのコントロールを設定
       const searchCtrl = new L.Control.Search({
-        layer: layer,                   // 検索対象のレイヤー
-        propertyName: '_searchKey',     // 先ほど作った合体キーワードを対象にする
-        textPlaceholder: '箇所番号 / 箇所名 / 住所', // 入力欄の薄い文字
-        marker: false,                  // 検索結果に赤い丸を出さない
-        zoom: 16,                       // 検索ヒット時にズームする倍率
-        collapsed: false                // 最初から入力欄を開いておく
+        layer: layer,                   
+        propertyName: '_searchKey',     
+        textPlaceholder: '箇所番号 / 箇所名 / 住所', 
+        marker: false,                  
+        zoom: 16,                       
+        collapsed: false,
+        initial: false // ←【重要】ここを追加しました！文字の途中からでもヒットするようになります
       }).addTo(map);
 
       // ヒットした時にポップアップを自動で開く
@@ -180,35 +180,4 @@ function init(){
 
   // その他の面データ (初期表示はOFF)
   const otherStyles = {
-    '大規模盛土.geojson': {name: '大規模盛土（2023年）', color: '#d84315'},
-    '小学校区.geojson': {name: '小学校区（2023年）', color: '#2e7d32', dash: '5,5'}
-  };
-  Object.entries(otherStyles).forEach(([file, opt]) => {
-    fetch('./' + file).then(r=>r.json()).then(data => {
-      const l = L.geoJSON(data, {
-        pane: file.includes('区') ? 'boundaryPane' : 'zonesPane',
-        style: {color: opt.color, weight: 2, dashArray: opt.dash || '', fillOpacity: 0.2},
-        onEachFeature: (f, l) => l.bindPopup(makePopup(opt.name, f.properties))
-      });
-      ctl.addOverlay(l, opt.name);
-    }).catch(()=>null);
-  });
-
-  // 凡例の更新
-  const legend=L.control({position:'bottomright'});
-  legend.onAdd=()=>{const d=L.DomUtil.create('div','legend'); d.innerHTML =
-    '🐻 熊出没（過去５年）<br>'+
-    '<i class="fa-solid fa-person-running" style="color:#2e7d32;"></i> 避難所<br>'+
-    '<i class="fa-solid fa-car-side" style="color:#6a1b9a;"></i> 道の駅（全国2018年）<br>'+
-    '🚌 バス停（2023年）<br>'+
-    '<i class="fa-solid fa-yen-sign" style="color:#e65100;"></i> 地価（2025年）<br>'+
-    '<i style="background:#ffff00;opacity:0.7;border:1px solid #cca300;"></i> 土砂災害：イエローゾーン<br>'+
-    '<i style="background:#ff0000;opacity:0.7;border:1px solid #cc0000;"></i> 土砂災害：レッドゾーン';
-    return d;};
-  legend.addTo(map);
-
-  if(L.control.locate){ L.control.locate({position:'topleft',flyTo:true,strings:{title:'現在地を表示'},locateOptions:{enableHighAccuracy:true}}).addTo(map); }
-}
-</script>
-</body>
-</html>
+    '大規模盛土.geojson': {name: '大規模盛土（2
