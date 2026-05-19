@@ -14,17 +14,20 @@
 <style>
   html,body{height:100%;margin:0}
   #map{height:100%;background:#f3f3f3}
-  .legend{background:#fff;padding:8px 12px;line-height:22px;box-shadow:0 0 15px rgba(0,0,0,.2);border-radius:5px;}
+  
+  /* --- 凡例用のデザインを修正 --- */
+  .legend{background:#fff;box-shadow:0 0 15px rgba(0,0,0,.2);border-radius:5px;}
+  .legend-header{padding:8px 12px;cursor:pointer;font-weight:bold;font-size:14px;background:#f8f9fa;text-align:center;color:#333;border-radius:5px;}
+  .legend-content{padding:8px 12px;line-height:22px;}
   .legend i{width:18px;height:18px;float:left;margin-right:8px;opacity:.9}
+  /* -------------------------- */
+  
   .map-icon {
     font-size: 18px; width: 30px; height: 30px; line-height: 30px; text-align: center;
     background: white; border-radius: 50%; border: 2px solid #333;
     transform: translate(-15px, -15px); box-shadow: 0 2px 5px rgba(0,0,0,0.3);
   }
-  /* 検索ボックスのラベル装飾 */
   .search-tag{display:inline-block;margin:6px 6px 4px 6px;padding:2px 8px;border-radius:999px;font-size:12px;color:#fff;background:#e53935;line-height:1.4;vertical-align:middle;font-weight:bold;}
-
-  /* 【修正箇所】検索候補のリストを一気に10件以上（最大約400px）見えるように拡大 */
   .leaflet-control-search .search-tip-list { max-height: 400px !important; }
 </style>
 </head>
@@ -192,17 +195,56 @@ function init(){
     }).catch(()=>null);
   });
 
-  // 凡例の更新
-  const legend=L.control({position:'bottomright'});
-  legend.onAdd=()=>{const d=L.DomUtil.create('div','legend'); d.innerHTML =
-    '🐻 熊出没（過去５年）<br>'+
-    '<i class="fa-solid fa-person-running" style="color:#2e7d32;"></i> 避難所<br>'+
-    '<i class="fa-solid fa-car-side" style="color:#6a1b9a;"></i> 道の駅（全国2018年）<br>'+
-    '🚌 バス停（2023年）<br>'+
-    '<i class="fa-solid fa-yen-sign" style="color:#e65100;"></i> 地価（2025年）<br>'+
-    '<i style="background:#ffff00;opacity:0.7;border:1px solid #cca300;"></i> 土砂災害：イエローゾーン<br>'+
-    '<i style="background:#ff0000;opacity:0.7;border:1px solid #cc0000;"></i> 土砂災害：レッドゾーン';
-    return d;};
+  // --- 凡例（折りたたみ機能付き） ---
+  const legend = L.control({position:'bottomright'});
+  legend.onAdd = () => {
+    const d = L.DomUtil.create('div','legend');
+    // タップした時に裏側の地図が動かないようにする
+    L.DomEvent.disableClickPropagation(d);
+
+    d.innerHTML = `
+      <div class="legend-header" id="legend-header">▼ 凡例を閉じる</div>
+      <div class="legend-content" id="legend-content">
+        🐻 熊出没（過去５年）<br>
+        <i class="fa-solid fa-person-running" style="color:#2e7d32;"></i> 避難所<br>
+        <i class="fa-solid fa-car-side" style="color:#6a1b9a;"></i> 道の駅（全国2018年）<br>
+        🚌 バス停（2023年）<br>
+        <i class="fa-solid fa-yen-sign" style="color:#e65100;"></i> 地価（2025年）<br>
+        <i style="background:#ffff00;opacity:0.7;border:1px solid #cca300;"></i> 土砂災害：イエローゾーン<br>
+        <i style="background:#ff0000;opacity:0.7;border:1px solid #cc0000;"></i> 土砂災害：レッドゾーン
+      </div>
+    `;
+
+    const header = d.querySelector('#legend-header');
+    const content = d.querySelector('#legend-content');
+
+    // ボタンタップ時の開閉切り替え処理
+    header.onclick = () => {
+      if (content.style.display === 'none') {
+        content.style.display = 'block';
+        header.innerText = '▼ 凡例を閉じる';
+        header.style.borderRadius = '5px 5px 0 0';
+        header.style.borderBottom = '1px solid #eee';
+      } else {
+        content.style.display = 'none';
+        header.innerText = '▲ 凡例を開く';
+        header.style.borderRadius = '5px';
+        header.style.borderBottom = 'none';
+      }
+    };
+
+    // スマホなど画面幅が狭い端末（600px未満）なら最初から閉じておく
+    if (window.innerWidth < 600) {
+      content.style.display = 'none';
+      header.innerText = '▲ 凡例を開く';
+      header.style.borderRadius = '5px';
+    } else {
+      header.style.borderRadius = '5px 5px 0 0';
+      header.style.borderBottom = '1px solid #eee';
+    }
+
+    return d;
+  };
   legend.addTo(map);
 
   if(L.control.locate){ L.control.locate({position:'topleft',flyTo:true,strings:{title:'現在地を表示'},locateOptions:{enableHighAccuracy:true}}).addTo(map); }
