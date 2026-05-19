@@ -15,19 +15,18 @@
   html,body{height:100%;margin:0}
   #map{height:100%;background:#f3f3f3}
   
-  /* --- 凡例用のデザインを修正 --- */
+  /* 凡例のデザイン */
   .legend{background:#fff;box-shadow:0 0 15px rgba(0,0,0,.2);border-radius:5px;}
   .legend-header{padding:8px 12px;cursor:pointer;font-weight:bold;font-size:14px;background:#f8f9fa;text-align:center;color:#333;border-radius:5px;}
   .legend-content{padding:8px 12px;line-height:22px;}
   .legend i{width:18px;height:18px;float:left;margin-right:8px;opacity:.9}
-  /* -------------------------- */
   
   .map-icon {
     font-size: 18px; width: 30px; height: 30px; line-height: 30px; text-align: center;
     background: white; border-radius: 50%; border: 2px solid #333;
     transform: translate(-15px, -15px); box-shadow: 0 2px 5px rgba(0,0,0,0.3);
   }
-  .search-tag{display:inline-block;margin:6px 6px 4px 6px;padding:2px 8px;border-radius:999px;font-size:12px;color:#fff;background:#e53935;line-height:1.4;vertical-align:middle;font-weight:bold;}
+  .search-tag{display:inline-block;margin:6px 6px 4px 6px;padding:2px 8px;border-radius:999px;font-size:12px;color:#fff;background:#e53935;line-height:1.4;vertical-align:middle;font-weight:bold;white-space:nowrap;}
   .leaflet-control-search .search-tip-list { max-height: 400px !important; }
 </style>
 </head>
@@ -49,18 +48,15 @@ function loadScript(src){return new Promise((ok,ng)=>{const s=document.createEle
 function init(){
   const map = L.map('map').setView([35.5, 137.0], 11);
 
-  // --- 重なり順（ペイン）の設定 ---
   map.createPane('csPane');        map.getPane('csPane').style.zIndex = 410;
   map.createPane('boundaryPane');  map.getPane('boundaryPane').style.zIndex = 421;
   map.createPane('zonesPane');     map.getPane('zonesPane').style.zIndex = 428;
   map.createPane('markersPane');   map.getPane('markersPane').style.zIndex = 450;
 
-  // --- ベースマップ ---
   const gsiPale = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© 国土地理院'}).addTo(map);
   const gsiPhoto = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg',{maxZoom:18,attribution:'© 国土地理院'});
   const konjakuM = L.tileLayer('https://ktgis.net/kjmapw/kjtilemap/chukyo/2man/{z}/{x}/{-y}.png', {maxZoom:16, attribution:'© 今昔マップ'});
 
-  // --- 重ねるタイルデータ ---
   const baseGifu = L.tileLayer('https://forestgeo.info/opendata/21_gifu/csmap_2023/{z}/{x}/{y}.webp',{
     maxZoom:18, opacity: 0.6, pane: 'csPane', attribution:'© 岐阜県'
   });
@@ -69,6 +65,7 @@ function init(){
     maxZoom:17, opacity: 0.7, attribution:'© 国土地理院'
   });
 
+  // 【修正箇所①】右上のレイヤー切り替えメニュー
   const ctl = L.control.layers({
     '国土地理院（淡色）': gsiPale,
     '国土地理院（航空写真）': gsiPhoto,
@@ -76,10 +73,13 @@ function init(){
   }, {
     '岐阜県CS立体図（2022年）': baseGifu,
     '洪水浸水想定区域（想定最大規模2020年）': floodL2
-  }, {collapsed:false}).addTo(map);
+  }, {
+    // スマホなど画面幅が狭い場合（600px未満）は最初から折りたたむ（アイコン化する）
+    collapsed: window.innerWidth < 600
+  }).addTo(map);
+  
   L.control.scale({position:'bottomleft',imperial:false}).addTo(map);
 
-  // --- ポップアップヘルパー ---
   const makePopup = (title, props) => {
     let rows = Object.entries(props).map(([k,v])=> {
       if(k === '_searchKey') return ''; 
@@ -88,7 +88,6 @@ function init(){
     return `<b>${title}</b><br><div style="max-height:250px;overflow:auto;"><table style="border-collapse:collapse;font-size:12px;">${rows}</table></div>`;
   };
 
-  // --- GeoJSONデータ読み込み関数 ---
   const loadLayer = async (filename, layerName, options) => {
     try {
       const res = await fetch('./' + filename, {cache:'no-store'});
@@ -112,14 +111,12 @@ function init(){
     } catch(e) { console.log(filename + " 読み込み失敗"); }
   };
 
-  // 各種ピンデータ
   loadLayer('kuma.geojson', '熊出没（過去５年）', {iconHtml: '🐻', iconColor: '#5d4037', fontSize: '20px', defaultOn: true});
   loadLayer('避難所.geojson', '避難所', {iconHtml: '<i class="fa-solid fa-person-running"></i>', iconColor: '#2e7d32'});
   loadLayer('道の駅.geojson', '道の駅（全国2018年）', {iconHtml: '<i class="fa-solid fa-car-side"></i>', iconColor: '#6a1b9a'});
   loadLayer('バス停.geojson', 'バス停（2023年）', {iconHtml: '🚌'});
   loadLayer('地価調査.geojson', '地価（2025年）', {iconHtml: '<i class="fa-solid fa-yen-sign"></i>', iconColor: '#e65100'});
 
-  // 土砂災害データ
   Promise.all(['part1.geojson','part2.geojson','part3.geojson','part4.geojson'].map(f=>fetch('./'+f,{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null)))
   .then(results => {
     const valid = results.filter(r=>r);
@@ -157,13 +154,15 @@ function init(){
       }).addTo(map); 
       ctl.addOverlay(layer, '土砂災害（特別）警戒区域（2025年）');
 
+      // 【修正箇所②】土砂災害の検索ボックス
       const searchCtrl = new L.Control.Search({
         layer: layer,
         propertyName: '_searchKey',
         textPlaceholder: '箇所番号 / 箇所名 / 住所',
         marker: false,
         zoom: 16,
-        collapsed: false,
+        // スマホなど画面幅が狭い場合（600px未満）は最初から折りたたむ（虫眼鏡アイコンにする）
+        collapsed: window.innerWidth < 600,
         initial: false 
       }).addTo(map);
 
@@ -179,7 +178,6 @@ function init(){
     }
   });
 
-  // その他の面データ (初期表示はOFF)
   const otherStyles = {
     '大規模盛土.geojson': {name: '大規模盛土（2023年）', color: '#d84315'},
     '小学校区.geojson': {name: '小学校区（2023年）', color: '#2e7d32', dash: '5,5'}
@@ -195,11 +193,10 @@ function init(){
     }).catch(()=>null);
   });
 
-  // --- 凡例（折りたたみ機能付き） ---
+  // 凡例（折りたたみ機能付き・変更なし）
   const legend = L.control({position:'bottomright'});
   legend.onAdd = () => {
     const d = L.DomUtil.create('div','legend');
-    // タップした時に裏側の地図が動かないようにする
     L.DomEvent.disableClickPropagation(d);
 
     d.innerHTML = `
@@ -218,7 +215,6 @@ function init(){
     const header = d.querySelector('#legend-header');
     const content = d.querySelector('#legend-content');
 
-    // ボタンタップ時の開閉切り替え処理
     header.onclick = () => {
       if (content.style.display === 'none') {
         content.style.display = 'block';
@@ -233,7 +229,6 @@ function init(){
       }
     };
 
-    // スマホなど画面幅が狭い端末（600px未満）なら最初から閉じておく
     if (window.innerWidth < 600) {
       content.style.display = 'none';
       header.innerText = '▲ 凡例を開く';
@@ -249,7 +244,6 @@ function init(){
 
   if(L.control.locate){ L.control.locate({position:'topleft',flyTo:true,strings:{title:'現在地を表示'},locateOptions:{enableHighAccuracy:true}}).addTo(map); }
 
-  // 地名・住所検索機能
   const geocoder = new L.Control.Search({
     url: 'https://nominatim.openstreetmap.org/search?format=json&q={s}',
     jsonpParam: 'json_callback',
