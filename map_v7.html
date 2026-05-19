@@ -50,9 +50,17 @@ function init(){
   const gsiPhoto = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg',{maxZoom:18,attribution:'© 国土地理院'});
   const konjakuM = L.tileLayer('https://ktgis.net/kjmapw/kjtilemap/chukyo/2man/{z}/{x}/{-y}.png', {maxZoom:16, attribution:'© 今昔マップ'});
 
-  // --- 岐阜県CS立体図（初期状態はOFFに変更） ---
+  // --- 重ねるタイルデータ（初期状態はOFF） ---
   const baseGifu = L.tileLayer('https://forestgeo.info/opendata/21_gifu/csmap_2023/{z}/{x}/{y}.webp',{
     maxZoom:18, opacity: 0.6, pane: 'csPane', attribution:'© 岐阜県'
+  });
+  
+  // 新規追加：洪水・内水ハザードマップ（国土地理院）透過率を0.7に設定して下の地図を見えやすく
+  const floodL2 = L.tileLayer('https://disaportaldata.gsi.go.jp/raster/01_flood_l2_shinsuishin_data/{z}/{x}/{y}.png',{
+    maxZoom:17, opacity: 0.7, attribution:'© 国土地理院'
+  });
+  const naisui = L.tileLayer('https://disaportaldata.gsi.go.jp/raster/02_naisui_pref_data/21/{z}/{x}/{y}.png',{
+    maxZoom:17, opacity: 0.7, attribution:'© 国土地理院'
   });
 
   const ctl = L.control.layers({
@@ -60,7 +68,9 @@ function init(){
     '国土地理院（航空写真）': gsiPhoto,
     '今昔マップ（明治期）': konjakuM
   }, {
-    '岐阜県CS立体図（2022年）': baseGifu
+    '岐阜県CS立体図（2022年）': baseGifu,
+    '洪水浸水想定区域（想定最大規模2020年）': floodL2,
+    '内水（雨水出水）浸水想定区域（2020年）': naisui
   }, {collapsed:false}).addTo(map);
   L.control.scale({position:'bottomleft',imperial:false}).addTo(map);
 
@@ -70,7 +80,7 @@ function init(){
     return `<b>${title}</b><br><div style="max-height:250px;overflow:auto;"><table style="border-collapse:collapse;font-size:12px;">${rows}</table></div>`;
   };
 
-  // --- GeoJSONデータ読み込み関数 (defaultOn引数を追加) ---
+  // --- GeoJSONデータ読み込み関数 ---
   const loadLayer = async (filename, layerName, options) => {
     try {
       const res = await fetch('./' + filename, {cache:'no-store'});
@@ -80,7 +90,7 @@ function init(){
         pane: options.pane || 'markersPane',
         pointToLayer: (f, latlng) => {
           return L.marker(latlng, {icon: L.divIcon({
-            html: `<div class="map-icon" style="color:${options.iconColor || 'black'}">${options.iconHtml}</div>`,
+            html: `<div class="map-icon" style="color:${options.iconColor || 'black'}; font-size:${options.fontSize||'18px'};">${options.iconHtml}</div>`,
             className: '', iconSize: [30,30]
           })});
         },
@@ -89,19 +99,20 @@ function init(){
       const cluster = L.markerClusterGroup({pane:'markersPane', disableClusteringAtZoom:15});
       cluster.addLayer(layer);
       
-      // デフォルトONの設定がある場合のみ地図に追加
       if(options.defaultOn) map.addLayer(cluster);
       ctl.addOverlay(cluster, layerName);
     } catch(e) { console.log(filename + " 読み込み失敗"); }
   };
 
-  // 1. 熊出没 (足跡アイコン・デフォルトON)
-  loadLayer('kuma.geojson', '熊出没（過去５年）', {iconHtml: '<i class="fa-solid fa-paw"></i>', iconColor: '#5d4037', defaultOn: true});
+  // 1. 熊出没 (絵文字の🐻アイコン・少し大きめ・デフォルトON)
+  loadLayer('kuma.geojson', '熊出没（過去５年）', {iconHtml: '🐻', iconColor: '#5d4037', fontSize: '20px', defaultOn: true});
   
-  // 2. その他 (初期表示はOFF)
+  // 2. ピンデータ (初期表示はOFF)
   loadLayer('避難所.geojson', '避難所', {iconHtml: '<i class="fa-solid fa-person-running"></i>', iconColor: '#2e7d32'});
-  loadLayer('道の駅.geojson', '道の駅（全国2018年度）', {iconHtml: '<i class="fa-solid fa-car-side"></i>', iconColor: '#6a1b9a'});
-  loadLayer('バス停.geojson', 'バス停', {iconHtml: '🚌'});
+  loadLayer('道の駅.geojson', '道の駅（全国2018年）', {iconHtml: '<i class="fa-solid fa-car-side"></i>', iconColor: '#6a1b9a'});
+  loadLayer('バス停.geojson', 'バス停（2023年）', {iconHtml: '🚌'});
+  // 3. 地価データの復活
+  loadLayer('地価調査.geojson', '地価（2025年）', {iconHtml: '<i class="fa-solid fa-yen-sign"></i>', iconColor: '#e65100'});
 
   // 土砂災害データ (デフォルトON)
   Promise.all(['part1.geojson','part2.geojson','part3.geojson','part4.geojson'].map(f=>fetch('./'+f,{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null)))
@@ -133,14 +144,14 @@ function init(){
           l.bindPopup(makePopup('土砂災害（特別）警戒区域', d));
         }
       }).addTo(map); // 【デフォルトON】
-      ctl.addOverlay(layer, '土砂災害（特別）警戒区域');
+      ctl.addOverlay(layer, '土砂災害（特別）警戒区域（2025年）');
     }
   });
 
   // その他の面データ (初期表示はOFF)
   const otherStyles = {
-    '大規模盛土.geojson': {name: '大規模盛土', color: '#d84315'},
-    '小学校区.geojson': {name: '小学校区', color: '#2e7d32', dash: '5,5'}
+    '大規模盛土.geojson': {name: '大規模盛土（2023年）', color: '#d84315'},
+    '小学校区.geojson': {name: '小学校区（2023年）', color: '#2e7d32', dash: '5,5'}
   };
   Object.entries(otherStyles).forEach(([file, opt]) => {
     fetch('./' + file).then(r=>r.json()).then(data => {
@@ -153,15 +164,16 @@ function init(){
     }).catch(()=>null);
   });
 
-  // 凡例の更新
+  // 凡例の更新（地価の追加など）
   const legend=L.control({position:'bottomright'});
   legend.onAdd=()=>{const d=L.DomUtil.create('div','legend'); d.innerHTML =
-    '<i class="fa-solid fa-paw" style="color:#5d4037;"></i> 熊出没（過去５年）<br>'+
+    '🐻 熊出没（過去５年）<br>'+
     '<i class="fa-solid fa-person-running" style="color:#2e7d32;"></i> 避難所<br>'+
-    '<i class="fa-solid fa-car-side" style="color:#6a1b9a;"></i> 道の駅（全国2018年度）<br>'+
-    '🚌 バス停<br>'+
-    '<i style="background:#ffff00;opacity:0.7;border:1px solid #cca300;"></i> イエローゾーン<br>'+
-    '<i style="background:#ff0000;opacity:0.7;border:1px solid #cc0000;"></i> レッドゾーン';
+    '<i class="fa-solid fa-car-side" style="color:#6a1b9a;"></i> 道の駅（全国2018年）<br>'+
+    '🚌 バス停（2023年）<br>'+
+    '<i class="fa-solid fa-yen-sign" style="color:#e65100;"></i> 地価（2025年）<br>'+
+    '<i style="background:#ffff00;opacity:0.7;border:1px solid #cca300;"></i> 土砂災害：イエローゾーン<br>'+
+    '<i style="background:#ff0000;opacity:0.7;border:1px solid #cc0000;"></i> 土砂災害：レッドゾーン';
     return d;};
   legend.addTo(map);
 
