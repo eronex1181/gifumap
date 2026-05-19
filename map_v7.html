@@ -207,4 +207,28 @@ function init(){
     return d;};
   legend.addTo(map);
 
-  if(L.control.locate){
+  if(L.control.locate){ L.control.locate({position:'topleft',flyTo:true,strings:{title:'現在地を表示'},locateOptions:{enableHighAccuracy:true}}).addTo(map); }
+
+  // 【追加箇所②】地図上の地名（大明神など）を検索できる機能
+  const geocoder = new L.Control.Search({
+    url: 'https://nominatim.openstreetmap.org/search?format=json&q={s}',
+    jsonpParam: 'json_callback',
+    propertyName: 'display_name',
+    propertyLoc: ['lat','lon'],
+    textPlaceholder: '地名 / 住所 / 施設名を入力（例: 大明神）',
+    collapsed: true, // 邪魔にならないように初期状態は虫眼鏡アイコンで折りたたむ
+    autoType: false,
+    minLength: 2,
+    zoom: 16,
+    marker: L.circleMarker([0,0],{radius:10, color:'#1e88e5', weight:3}) // ヒットした場所に青い丸を出す
+  }).addTo(map);
+
+  // 検索ヒット時に場所の名前をポップアップ
+  geocoder.on('search:locationfound', function(e) {
+    e.layer.bindPopup(e.text).openPopup();
+  });
+
+}
+</script>
+</body>
+</html>
