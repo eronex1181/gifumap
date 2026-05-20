@@ -78,12 +78,31 @@ function init(){
   
   L.control.scale({position:'bottomleft',imperial:false}).addTo(map);
 
-  const makePopup = (title, props) => {
+  // 【修正】ポップアップ内にGoogleマップ・ストリートビューの連携ボタンを自動生成する機能を追加
+  const makePopup = (title, props, latlng) => {
     let rows = Object.entries(props).map(([k,v])=> {
       if(k === '_searchKey') return ''; 
       return `<tr><th style="white-space:nowrap;padding-right:8px;border-bottom:1px solid #ccc;text-align:left;">${k}</th><td style="border-bottom:1px solid #ccc;">${v}</td></tr>`;
     }).join('');
-    return `<b>${title}</b><br><div style="max-height:250px;overflow:auto;"><table style="border-collapse:collapse;font-size:12px;">${rows}</table></div>`;
+
+    // 座標がある場合、外部連携ボタンのHTMLを作成
+    let extButtons = '';
+    if (latlng) {
+      const lat = latlng.lat;
+      const lng = latlng.lng;
+      extButtons = `
+        <div style="margin-top:12px; padding-top:8px; border-top:1px dashed #ccc; display:flex; gap:6px;">
+          <a href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}" target="_blank" style="flex:1; text-align:center; background:#4285F4; color:white; padding:5px 0; border-radius:4px; text-decoration:none; font-size:11px; font-weight:bold;">
+            <i class="fa-solid fa-location-dot"></i> Googleマップ
+          </a>
+          <a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="flex:1; text-align:center; background:#ea4335; color:white; padding:5px 0; border-radius:4px; text-decoration:none; font-size:11px; font-weight:bold;">
+            <i class="fa-solid fa-street-view"></i> ｽﾄﾘｰﾄﾋﾞｭｰ
+          </a>
+        </div>
+      `;
+    }
+
+    return `<b>${title}</b><br><div style="max-height:180px;overflow:auto;"><table style="border-collapse:collapse;font-size:12px;">${rows}</table></div>${extButtons}`;
   };
 
   const loadLayer = async (filename, layerName, options) => {
@@ -99,7 +118,14 @@ function init(){
             className: '', iconSize: [30,30]
           })});
         },
-        onEachFeature: (f, l) => l.bindPopup(makePopup(layerName, f.properties))
+        onEachFeature: (f, l) => {
+          // ピン（点データ）の緯度経度を取得してポップアップに渡す
+          let ptLatLng = null;
+          if (f.geometry && f.geometry.type === 'Point') {
+            ptLatLng = L.latLng(f.geometry.coordinates[1], f.geometry.coordinates[0]);
+          }
+          l.bindPopup(makePopup(layerName, f.properties, ptLatLng));
+        }
       });
       const cluster = L.markerClusterGroup({pane:'markersPane', disableClusteringAtZoom:15});
       cluster.addLayer(layer);
@@ -147,7 +173,13 @@ function init(){
               d['区分'] = n;
             } else d[k] = v;
           });
-          l.bindPopup(makePopup('土砂災害（特別）警戒区域', d));
+
+          // ポリゴン（面データ）の中心点の緯度経度を計算してポップアップに渡す
+          let polyCenter = null;
+          if (l.getBounds) {
+            polyCenter = l.getBounds().getCenter();
+          }
+          l.bindPopup(makePopup('土砂災害（特別）警戒区域', d, polyCenter));
         }
       }).addTo(map); 
       ctl.addOverlay(layer, '土砂災害（特別）警戒区域（2025年）');
@@ -183,7 +215,11 @@ function init(){
       const l = L.geoJSON(data, {
         pane: file.includes('区') ? 'boundaryPane' : 'zonesPane',
         style: {color: opt.color, weight: 2, dashArray: opt.dash || '', fillOpacity: 0.2},
-        onEachFeature: (f, l) => l.bindPopup(makePopup(opt.name, f.properties))
+        onEachFeature: (f, l) => {
+          let otherCenter = null;
+          if (l.getBounds) otherCenter = l.getBounds().getCenter();
+          l.bindPopup(makePopup(opt.name, f.properties, otherCenter));
+        }
       });
       ctl.addOverlay(l, opt.name);
     }).catch(()=>null);
