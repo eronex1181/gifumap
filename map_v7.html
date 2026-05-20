@@ -238,31 +238,47 @@ function init(){
 
   if(L.control.locate){ L.control.locate({position:'topleft',flyTo:true,strings:{title:'現在地を表示'},locateOptions:{enableHighAccuracy:true}}).addTo(map); }
 
-  // 【完全修正】地名・住所検索機能（エラー落ちしない標準機能を利用）
+  // 【完全修正】地名・住所検索機能（ローカルフィルターによる隠ぺいを防止！）
   const geocoder = new L.Control.Search({
-    // 国土地理院のAPIを直接URLで指定（内部で自動的に通信とキャンセル処理が行われます）
-    url: 'https://msearch.gsi.go.jp/address/search?q={s}',
-    // 受け取ったデータを検索ボックス用の形に整理する
-    formatData: function(raw) {
-      const results = {};
-      if (Array.isArray(raw)) {
-        raw.forEach(item => {
-          if(item.properties && item.properties.title && item.geometry && item.geometry.coordinates) {
-            const title = item.properties.title;
-            // 緯度・経度を取り出す
-            const lat = item.geometry.coordinates[1];
-            const lon = item.geometry.coordinates[0];
-            results[title] = L.latLng(lat, lon);
+    sourceData: function(text, callResponse) {
+      fetch('https://msearch.gsi.go.jp/address/search?q=' + encodeURIComponent(text))
+        .then(response => {
+          if (!response.ok) throw new Error('Network response was not ok');
+          return response.json();
+        })
+        .then(data => {
+          const results = {};
+          if(Array.isArray(data)) {
+            data.forEach(item => {
+              if(item.properties && item.properties.title && item.geometry && item.geometry.coordinates) {
+                let title = item.properties.title;
+                // 同じ名前の場所が複数ある場合、上書きされないように見えないスペースを足す
+                while (results[title]) {
+                  title += " ";
+                }
+                const lat = item.geometry.coordinates[1];
+                const lon = item.geometry.coordinates[0];
+                results[title] = L.latLng(lat, lon);
+              }
+            });
           }
+          callResponse(results);
+        })
+        .catch(err => {
+          console.error('地名検索エラー:', err);
+          callResponse({});
         });
-      }
-      return results;
+    },
+    // 【ココが原因でした！】APIがせっかく見つけてくれた結果を、文字の違いで勝手に隠さないようにする
+    filterData: function(text, records) {
+      return records;
     },
     textPlaceholder: '地名 / 住所 / 施設名（例: 中津川駅）',
-    collapsed: window.innerWidth < 600, // スマホでは折りたたむ
+    collapsed: window.innerWidth < 600, 
     autoType: false,
     minLength: 2,
     zoom: 16,
+    delayType: 400, // サーバーの負荷を避けるために一瞬待ってから通信
     marker: L.circleMarker([0,0],{radius:10, color:'#1e88e5', weight:3}) 
   }).addTo(map);
 
