@@ -239,26 +239,35 @@ function init(){
 
   if(L.control.locate){ L.control.locate({position:'topleft',flyTo:true,strings:{title:'現在地を表示'},locateOptions:{enableHighAccuracy:true}}).addTo(map); }
 
-  // 【修正箇所】地名・住所検索機能をより確実な通信方式（fetch）へ変更
+  // 【大改修】検索エンジンを「国土地理院」の公式APIに変更しました！
   const geocoder = new L.Control.Search({
     sourceData: function(text, callResponse) {
-      // 古いJSONP通信ではなく、最新のfetchで確実にデータを取得する
-      fetch('https://nominatim.openstreetmap.org/search?format=json&accept-language=ja&q=' + encodeURIComponent(text))
+      // 国土地理院の検索サーバーへ通信
+      fetch('https://msearch.gsi.go.jp/address/search?q=' + encodeURIComponent(text))
         .then(response => response.json())
         .then(data => {
-          const results = {};
-          // ヒットした候補を変換
-          data.forEach(item => {
-            results[item.display_name] = L.latLng(item.lat, item.lon);
-          });
-          callResponse(results);
+          callResponse(data);
         })
         .catch(err => {
           console.error('地名検索エラー:', err);
-          callResponse({});
+          callResponse([]);
         });
     },
-    textPlaceholder: '地名 / 住所 / 施設名を入力（例: 中津川駅）',
+    // 受け取ったデータをLeaflet用に整形
+    formatData: function(raw) {
+      const results = {};
+      raw.forEach(item => {
+        if(item.properties && item.geometry) {
+          const title = item.properties.title;
+          // 国土地理院のデータは [経度, 緯度] の順番で入っているため抽出
+          const lat = item.geometry.coordinates[1];
+          const lon = item.geometry.coordinates[0];
+          results[title] = L.latLng(lat, lon);
+        }
+      });
+      return results;
+    },
+    textPlaceholder: '地名 / 住所 / 施設名（例: 中津川駅）',
     collapsed: true, 
     autoType: false,
     minLength: 2,
