@@ -28,6 +28,30 @@
   }
   .search-tag{display:inline-block;margin:6px 6px 4px 6px;padding:2px 8px;border-radius:999px;font-size:12px;color:#fff;background:#e53935;line-height:1.4;vertical-align:middle;font-weight:bold;white-space:nowrap;}
   .leaflet-control-search .search-tip-list { max-height: 400px !important; }
+
+  /* --- 新しい地名検索（虫眼鏡）の折りたたみスタイル --- */
+  .custom-search-container {
+    background: white; border-radius: 4px; box-shadow: 0 1px 5px rgba(0,0,0,0.65);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .custom-search-top { display: flex; align-items: center; }
+  .custom-search-icon {
+    width: 34px; height: 34px; line-height: 34px; text-align: center;
+    cursor: pointer; font-size: 16px; background: white; border: none; outline: none; padding: 0; color: #333;
+  }
+  .custom-search-icon:hover { background: #f4f4f4; }
+  .custom-search-input {
+    width: 0; opacity: 0; border: none; outline: none; padding: 0;
+    transition: width 0.3s, opacity 0.3s, padding 0.3s; font-size: 14px; height: 34px;
+  }
+  .custom-search-container.open .custom-search-input {
+    width: 160px; opacity: 1; padding: 0 8px; border-left: 1px solid #eee;
+  }
+  .custom-search-results {
+    display: none; max-height: 200px; overflow-y: auto; border-top: 1px solid #eee; font-size: 13px;
+  }
+  .custom-search-result-item { padding: 8px; border-bottom: 1px solid #f0f0f0; cursor: pointer; color: #333; }
+  .custom-search-result-item:hover { background-color: #f8f8f8; }
 </style>
 </head>
 <body>
@@ -152,7 +176,6 @@ function init(){
       }).addTo(map); 
       ctl.addOverlay(layer, '土砂災害（特別）警戒区域（2025年）');
 
-      // 土砂災害用の検索ボックス
       const searchCtrl = new L.Control.Search({
         layer: layer,
         propertyName: '_searchKey',
@@ -241,111 +264,95 @@ function init(){
   if(L.control.locate){ L.control.locate({position:'topleft',flyTo:true,strings:{title:'現在地を表示'},locateOptions:{enableHighAccuracy:true}}).addTo(map); }
 
   // ----------------------------------------------------------------------
-  // ★【最終解決】外部プラグインを一切使わない「完全自作」の地名検索システム
+  // ★【完全完成版】折りたたみ式＆タップ確実動作の地名検索システム
   // ----------------------------------------------------------------------
   const customGeocoder = L.control({position: 'topleft'});
   customGeocoder.onAdd = function(map) {
-    const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
-    container.style.backgroundColor = 'white';
-    container.style.padding = '5px';
-    container.style.display = 'flex';
-    container.style.flexDirection = 'column';
-    container.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
+    const container = L.DomUtil.create('div', 'custom-search-container');
+    L.DomEvent.disableClickPropagation(container);
+    L.DomEvent.disableScrollPropagation(container);
 
-    const inputWrap = L.DomUtil.create('div', '', container);
-    inputWrap.style.display = 'flex';
-    inputWrap.style.alignItems = 'center';
-
-    const input = L.DomUtil.create('input', '', inputWrap);
-    input.type = 'text';
-    input.placeholder = '地名/住所検索 (例: 中津川駅)';
-    input.style.border = '1px solid #ccc';
-    input.style.padding = '6px';
-    input.style.borderRadius = '4px';
-    input.style.width = '160px';
-    input.style.fontSize = '14px';
-
-    const btn = L.DomUtil.create('button', '', inputWrap);
+    const top = L.DomUtil.create('div', 'custom-search-top', container);
+    const btn = L.DomUtil.create('button', 'custom-search-icon', top);
     btn.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i>';
-    btn.style.border = 'none';
-    btn.style.backgroundColor = '#1e88e5';
-    btn.style.color = 'white';
-    btn.style.padding = '6px 10px';
-    btn.style.marginLeft = '5px';
-    btn.style.borderRadius = '4px';
-    btn.style.cursor = 'pointer';
+    btn.title = '地名/住所検索';
 
-    const resultBox = L.DomUtil.create('div', '', container);
-    resultBox.style.maxHeight = '200px';
-    resultBox.style.overflowY = 'auto';
-    resultBox.style.marginTop = '5px';
-    resultBox.style.display = 'none';
-    resultBox.style.fontSize = '13px';
-    resultBox.style.borderTop = '1px solid #eee';
+    const input = L.DomUtil.create('input', 'custom-search-input', top);
+    input.type = 'text';
+    input.placeholder = '地名/住所 (例: 中津川駅)';
 
-    // 検索ボタンを押したとき、またはエンターキーを押したときの処理
+    const resultBox = L.DomUtil.create('div', 'custom-search-results', container);
+
+    // 虫眼鏡アイコンを押したときの開閉処理
+    btn.onclick = (e) => {
+      e.preventDefault();
+      if(container.classList.contains('open')) {
+        if(input.value.trim() !== '') doSearch(); // 文字が入っていれば検索実行
+        else {
+          container.classList.remove('open'); // 空なら閉じる
+          resultBox.style.display = 'none';
+        }
+      } else {
+        container.classList.add('open'); // 開く
+        input.focus();
+      }
+    };
+
     const doSearch = () => {
       const q = input.value.trim();
       if(!q) return;
-      
-      // ボタンのアイコンを「くるくる」に変える
-      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; // くるくるアイコンに変更
       resultBox.innerHTML = '';
       
-      // 国土地理院のサーバーに直接通信
       fetch('https://msearch.gsi.go.jp/address/search?q=' + encodeURIComponent(q))
         .then(res => res.json())
         .then(data => {
-          // ボタンのアイコンを虫眼鏡に戻す
-          btn.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i>';
+          btn.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i>'; // 虫眼鏡に戻す
           resultBox.style.display = 'block';
-
           if(data.length === 0) {
-            resultBox.innerHTML = '<div style="padding:8px;color:red;">見つかりませんでした</div>';
+            resultBox.innerHTML = '<div style="padding:8px;color:red;">見つかりません</div>';
             return;
           }
-
-          // 見つかったデータをリストとして表示
           data.forEach(item => {
             if(!item.geometry) return;
             const title = item.properties.title;
             const lat = item.geometry.coordinates[1];
             const lon = item.geometry.coordinates[0];
             
-            const row = L.DomUtil.create('div', '', resultBox);
-            row.innerHTML = '📍 ' + title;
-            row.style.padding = '8px';
-            row.style.borderBottom = '1px solid #f0f0f0';
-            row.style.cursor = 'pointer';
-            row.style.color = '#333';
+            const row = L.DomUtil.create('div', 'custom-search-result-item', resultBox);
+            // 検索したキーワードを含めて分かりやすく表示
+            row.innerHTML = '📍 ' + title + ' <span style="color:#888;font-size:11px;">(' + q + ')</span>';
             
-            // リストをクリックした時の動作（その場所に飛んで、吹き出しを出す）
-            row.onclick = () => {
+            // 【重要】スマホでも確実にタップ判定を拾う処理
+            L.DomEvent.on(row, 'click', () => {
               map.setView([lat, lon], 16);
-              L.popup().setLatLng([lat, lon]).setContent('<b>' + title + '</b>').openOn(map);
-              resultBox.style.display = 'none'; // リストを閉じる
-            };
+              
+              // 以前の青丸ピンがあれば消す
+              if(window.customSearchMarker) map.removeLayer(window.customSearchMarker);
+              
+              // 新しい場所に青丸ピンを立てて吹き出しを出す
+              window.customSearchMarker = L.circleMarker([lat, lon], {radius: 10, color: '#1e88e5', weight: 3}).addTo(map);
+              window.customSearchMarker.bindPopup('<b>' + q + '</b><br><span style="font-size:11px;">' + title + '</span>').openPopup();
+              
+              // 選択後はリストを閉じて検索窓も折りたたむ
+              resultBox.style.display = 'none';
+              container.classList.remove('open');
+            });
           });
         })
         .catch(err => {
           btn.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i>';
           resultBox.style.display = 'block';
-          resultBox.innerHTML = '<div style="padding:8px;color:red;">通信エラーが発生しました</div>';
+          resultBox.innerHTML = '<div style="padding:8px;color:red;">通信エラー</div>';
         });
     };
 
-    // ボタンクリックかエンターキーで検索実行
-    btn.onclick = doSearch;
+    // エンターキーでも検索実行
     input.onkeypress = (e) => { if(e.key === 'Enter') doSearch(); };
-
-    // 地図の操作（クリックやドラッグ）が入力ボックスの邪魔をしないようにする
-    L.DomEvent.disableClickPropagation(container);
-    L.DomEvent.disableScrollPropagation(container);
 
     return container;
   };
   customGeocoder.addTo(map);
-
 }
 </script>
 </body>
