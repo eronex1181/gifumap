@@ -11,7 +11,6 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-search@3.0.9/dist/leaflet-search.min.css">
-<link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css">
 
 <style>
   html,body{height:100%;margin:0}
@@ -43,8 +42,6 @@ function loadScript(src){return new Promise((ok,ng)=>{const s=document.createEle
   await loadScript("https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.81.0/dist/L.Control.Locate.min.js");
   await loadScript("https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js");
   await loadScript("https://cdn.jsdelivr.net/npm/leaflet-search@3.0.9/dist/leaflet-search.min.js");
-  // ★【追加】新しい地名検索専用プラグインのJS
-  await loadScript("https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js");
   init();
 })();
 
@@ -112,14 +109,12 @@ function init(){
     } catch(e) { console.log(filename + " 読み込み失敗"); }
   };
 
-  // GeoJSONデータの読み込み
   loadLayer('kuma.geojson', '熊出没（過去５年）', {iconHtml: '🐻', iconColor: '#5d4037', fontSize: '20px', defaultOn: true});
   loadLayer('避難所.geojson', '避難所', {iconHtml: '<i class="fa-solid fa-person-running"></i>', iconColor: '#2e7d32'});
   loadLayer('道の駅.geojson', '道の駅（全国2018年）', {iconHtml: '<i class="fa-solid fa-car-side"></i>', iconColor: '#6a1b9a'});
   loadLayer('バス停.geojson', 'バス停（2023年）', {iconHtml: '🚌'});
   loadLayer('地価調査.geojson', '地価（2025年）', {iconHtml: '<i class="fa-solid fa-yen-sign"></i>', iconColor: '#e65100'});
 
-  // 土砂災害データと検索（Sabo Search）
   Promise.all(['part1.geojson','part2.geojson','part3.geojson','part4.geojson'].map(f=>fetch('./'+f,{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null)))
   .then(results => {
     const valid = results.filter(r=>r);
@@ -135,6 +130,7 @@ function init(){
         onEachFeature: (f, l) => {
           const p = f.properties ?? {};
           const d = {};
+          
           const num = p['箇所番号'] || p.A33_004 || '';
           const name = p['箇所名'] || p.A33_005 || '';
           const addr = p['住所'] || p['所在地'] || p.A33_009 || '';
@@ -156,6 +152,7 @@ function init(){
       }).addTo(map); 
       ctl.addOverlay(layer, '土砂災害（特別）警戒区域（2025年）');
 
+      // 土砂災害用の検索ボックス
       const searchCtrl = new L.Control.Search({
         layer: layer,
         propertyName: '_searchKey',
@@ -193,7 +190,6 @@ function init(){
     }).catch(()=>null);
   });
 
-  // 凡例
   const legend = L.control({position:'bottomright'});
   legend.onAdd = () => {
     const d = L.DomUtil.create('div','legend');
@@ -244,35 +240,111 @@ function init(){
 
   if(L.control.locate){ L.control.locate({position:'topleft',flyTo:true,strings:{title:'現在地を表示'},locateOptions:{enableHighAccuracy:true}}).addTo(map); }
 
-  // --------------------------------------------------------
-  // ★【完全解決】別プラグイン(Leaflet-Control-Geocoder)による国土地理院検索
-  // --------------------------------------------------------
-  const gsiGeocoder = {
-    geocode: function(query, cb, context) {
-      fetch('https://msearch.gsi.go.jp/address/search?q=' + encodeURIComponent(query))
+  // ----------------------------------------------------------------------
+  // ★【最終解決】外部プラグインを一切使わない「完全自作」の地名検索システム
+  // ----------------------------------------------------------------------
+  const customGeocoder = L.control({position: 'topleft'});
+  customGeocoder.onAdd = function(map) {
+    const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+    container.style.backgroundColor = 'white';
+    container.style.padding = '5px';
+    container.style.display = 'flex';
+    container.style.flexDirection = 'column';
+    container.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
+
+    const inputWrap = L.DomUtil.create('div', '', container);
+    inputWrap.style.display = 'flex';
+    inputWrap.style.alignItems = 'center';
+
+    const input = L.DomUtil.create('input', '', inputWrap);
+    input.type = 'text';
+    input.placeholder = '地名/住所検索 (例: 中津川駅)';
+    input.style.border = '1px solid #ccc';
+    input.style.padding = '6px';
+    input.style.borderRadius = '4px';
+    input.style.width = '160px';
+    input.style.fontSize = '14px';
+
+    const btn = L.DomUtil.create('button', '', inputWrap);
+    btn.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i>';
+    btn.style.border = 'none';
+    btn.style.backgroundColor = '#1e88e5';
+    btn.style.color = 'white';
+    btn.style.padding = '6px 10px';
+    btn.style.marginLeft = '5px';
+    btn.style.borderRadius = '4px';
+    btn.style.cursor = 'pointer';
+
+    const resultBox = L.DomUtil.create('div', '', container);
+    resultBox.style.maxHeight = '200px';
+    resultBox.style.overflowY = 'auto';
+    resultBox.style.marginTop = '5px';
+    resultBox.style.display = 'none';
+    resultBox.style.fontSize = '13px';
+    resultBox.style.borderTop = '1px solid #eee';
+
+    // 検索ボタンを押したとき、またはエンターキーを押したときの処理
+    const doSearch = () => {
+      const q = input.value.trim();
+      if(!q) return;
+      
+      // ボタンのアイコンを「くるくる」に変える
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+      resultBox.innerHTML = '';
+      
+      // 国土地理院のサーバーに直接通信
+      fetch('https://msearch.gsi.go.jp/address/search?q=' + encodeURIComponent(q))
         .then(res => res.json())
         .then(data => {
-          const results = data.map(item => {
-            const latLng = L.latLng(item.geometry.coordinates[1], item.geometry.coordinates[0]);
-            return {
-              name: item.properties.title,
-              bbox: L.latLngBounds(latLng, latLng), // カメラ移動用の領域
-              center: latLng // ピンを立てる位置
+          // ボタンのアイコンを虫眼鏡に戻す
+          btn.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i>';
+          resultBox.style.display = 'block';
+
+          if(data.length === 0) {
+            resultBox.innerHTML = '<div style="padding:8px;color:red;">見つかりませんでした</div>';
+            return;
+          }
+
+          // 見つかったデータをリストとして表示
+          data.forEach(item => {
+            if(!item.geometry) return;
+            const title = item.properties.title;
+            const lat = item.geometry.coordinates[1];
+            const lon = item.geometry.coordinates[0];
+            
+            const row = L.DomUtil.create('div', '', resultBox);
+            row.innerHTML = '📍 ' + title;
+            row.style.padding = '8px';
+            row.style.borderBottom = '1px solid #f0f0f0';
+            row.style.cursor = 'pointer';
+            row.style.color = '#333';
+            
+            // リストをクリックした時の動作（その場所に飛んで、吹き出しを出す）
+            row.onclick = () => {
+              map.setView([lat, lon], 16);
+              L.popup().setLatLng([lat, lon]).setContent('<b>' + title + '</b>').openOn(map);
+              resultBox.style.display = 'none'; // リストを閉じる
             };
           });
-          cb.call(context, results);
         })
-        .catch(() => cb.call(context, []));
-    }
-  };
+        .catch(err => {
+          btn.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i>';
+          resultBox.style.display = 'block';
+          resultBox.innerHTML = '<div style="padding:8px;color:red;">通信エラーが発生しました</div>';
+        });
+    };
 
-  L.Control.geocoder({
-    geocoder: gsiGeocoder,
-    position: 'topleft',           // 他の検索窓と干渉しないよう左上に配置
-    placeholder: '地名/住所 (例: 中津川駅)',
-    errorMessage: '見つかりませんでした',
-    defaultMarkGeocode: true       // 検索ヒット時に自動でマーカーを立てる
-  }).addTo(map);
+    // ボタンクリックかエンターキーで検索実行
+    btn.onclick = doSearch;
+    input.onkeypress = (e) => { if(e.key === 'Enter') doSearch(); };
+
+    // 地図の操作（クリックやドラッグ）が入力ボックスの邪魔をしないようにする
+    L.DomEvent.disableClickPropagation(container);
+    L.DomEvent.disableScrollPropagation(container);
+
+    return container;
+  };
+  customGeocoder.addTo(map);
 
 }
 </script>
