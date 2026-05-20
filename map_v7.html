@@ -11,6 +11,8 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-search@3.0.9/dist/leaflet-search.min.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css">
+
 <style>
   html,body{height:100%;margin:0}
   #map{height:100%;background:#f3f3f3}
@@ -41,6 +43,8 @@ function loadScript(src){return new Promise((ok,ng)=>{const s=document.createEle
   await loadScript("https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.81.0/dist/L.Control.Locate.min.js");
   await loadScript("https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js");
   await loadScript("https://cdn.jsdelivr.net/npm/leaflet-search@3.0.9/dist/leaflet-search.min.js");
+  // ★【追加】新しい地名検索専用プラグインのJS
+  await loadScript("https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js");
   init();
 })();
 
@@ -108,12 +112,14 @@ function init(){
     } catch(e) { console.log(filename + " 読み込み失敗"); }
   };
 
+  // GeoJSONデータの読み込み
   loadLayer('kuma.geojson', '熊出没（過去５年）', {iconHtml: '🐻', iconColor: '#5d4037', fontSize: '20px', defaultOn: true});
   loadLayer('避難所.geojson', '避難所', {iconHtml: '<i class="fa-solid fa-person-running"></i>', iconColor: '#2e7d32'});
   loadLayer('道の駅.geojson', '道の駅（全国2018年）', {iconHtml: '<i class="fa-solid fa-car-side"></i>', iconColor: '#6a1b9a'});
   loadLayer('バス停.geojson', 'バス停（2023年）', {iconHtml: '🚌'});
   loadLayer('地価調査.geojson', '地価（2025年）', {iconHtml: '<i class="fa-solid fa-yen-sign"></i>', iconColor: '#e65100'});
 
+  // 土砂災害データと検索（Sabo Search）
   Promise.all(['part1.geojson','part2.geojson','part3.geojson','part4.geojson'].map(f=>fetch('./'+f,{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null)))
   .then(results => {
     const valid = results.filter(r=>r);
@@ -129,7 +135,6 @@ function init(){
         onEachFeature: (f, l) => {
           const p = f.properties ?? {};
           const d = {};
-          
           const num = p['箇所番号'] || p.A33_004 || '';
           const name = p['箇所名'] || p.A33_005 || '';
           const addr = p['住所'] || p['所在地'] || p.A33_009 || '';
@@ -188,6 +193,7 @@ function init(){
     }).catch(()=>null);
   });
 
+  // 凡例
   const legend = L.control({position:'bottomright'});
   legend.onAdd = () => {
     const d = L.DomUtil.create('div','legend');
@@ -238,53 +244,36 @@ function init(){
 
   if(L.control.locate){ L.control.locate({position:'topleft',flyTo:true,strings:{title:'現在地を表示'},locateOptions:{enableHighAccuracy:true}}).addTo(map); }
 
-  // 【完全修正】地名・住所検索機能（ローカルフィルターによる隠ぺいを防止！）
-  const geocoder = new L.Control.Search({
-    sourceData: function(text, callResponse) {
-      fetch('https://msearch.gsi.go.jp/address/search?q=' + encodeURIComponent(text))
-        .then(response => {
-          if (!response.ok) throw new Error('Network response was not ok');
-          return response.json();
-        })
+  // --------------------------------------------------------
+  // ★【完全解決】別プラグイン(Leaflet-Control-Geocoder)による国土地理院検索
+  // --------------------------------------------------------
+  const gsiGeocoder = {
+    geocode: function(query, cb, context) {
+      fetch('https://msearch.gsi.go.jp/address/search?q=' + encodeURIComponent(query))
+        .then(res => res.json())
         .then(data => {
-          const results = {};
-          if(Array.isArray(data)) {
-            data.forEach(item => {
-              if(item.properties && item.properties.title && item.geometry && item.geometry.coordinates) {
-                let title = item.properties.title;
-                // 同じ名前の場所が複数ある場合、上書きされないように見えないスペースを足す
-                while (results[title]) {
-                  title += " ";
-                }
-                const lat = item.geometry.coordinates[1];
-                const lon = item.geometry.coordinates[0];
-                results[title] = L.latLng(lat, lon);
-              }
-            });
-          }
-          callResponse(results);
+          const results = data.map(item => {
+            const latLng = L.latLng(item.geometry.coordinates[1], item.geometry.coordinates[0]);
+            return {
+              name: item.properties.title,
+              bbox: L.latLngBounds(latLng, latLng), // カメラ移動用の領域
+              center: latLng // ピンを立てる位置
+            };
+          });
+          cb.call(context, results);
         })
-        .catch(err => {
-          console.error('地名検索エラー:', err);
-          callResponse({});
-        });
-    },
-    // 【ココが原因でした！】APIがせっかく見つけてくれた結果を、文字の違いで勝手に隠さないようにする
-    filterData: function(text, records) {
-      return records;
-    },
-    textPlaceholder: '地名 / 住所 / 施設名（例: 中津川駅）',
-    collapsed: window.innerWidth < 600, 
-    autoType: false,
-    minLength: 2,
-    zoom: 16,
-    delayType: 400, // サーバーの負荷を避けるために一瞬待ってから通信
-    marker: L.circleMarker([0,0],{radius:10, color:'#1e88e5', weight:3}) 
+        .catch(() => cb.call(context, []));
+    }
+  };
+
+  L.Control.geocoder({
+    geocoder: gsiGeocoder,
+    position: 'topleft',           // 他の検索窓と干渉しないよう左上に配置
+    placeholder: '地名/住所 (例: 中津川駅)',
+    errorMessage: '見つかりませんでした',
+    defaultMarkGeocode: true       // 検索ヒット時に自動でマーカーを立てる
   }).addTo(map);
 
-  geocoder.on('search:locationfound', function(e) {
-    e.layer.bindPopup(e.text).openPopup();
-  });
 }
 </script>
 </body>
