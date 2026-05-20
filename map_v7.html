@@ -188,7 +188,6 @@ function init(){
     }).catch(()=>null);
   });
 
-  // 凡例
   const legend = L.control({position:'bottomright'});
   legend.onAdd = () => {
     const d = L.DomUtil.create('div','legend');
@@ -239,33 +238,30 @@ function init(){
 
   if(L.control.locate){ L.control.locate({position:'topleft',flyTo:true,strings:{title:'現在地を表示'},locateOptions:{enableHighAccuracy:true}}).addTo(map); }
 
-  // 【大改修】検索エンジンを「国土地理院」の公式APIに変更しました！
+  // 【修正】検索ボックスが確実にデータを読み取れる形へ直接フォーマットして渡す
   const geocoder = new L.Control.Search({
     sourceData: function(text, callResponse) {
-      // 国土地理院の検索サーバーへ通信
       fetch('https://msearch.gsi.go.jp/address/search?q=' + encodeURIComponent(text))
         .then(response => response.json())
         .then(data => {
-          callResponse(data);
+          const results = {};
+          if(Array.isArray(data)) {
+            data.forEach(item => {
+              if(item.properties && item.properties.title && item.geometry && item.geometry.coordinates) {
+                const title = item.properties.title;
+                const lat = item.geometry.coordinates[1];
+                const lon = item.geometry.coordinates[0];
+                // 検索ボックスが読み取れる専用の形 { "名前": L.latLng(緯度, 経度) } に変換
+                results[title] = L.latLng(lat, lon);
+              }
+            });
+          }
+          callResponse(results); // 正しい形で検索ボックスにお返しする
         })
         .catch(err => {
           console.error('地名検索エラー:', err);
-          callResponse([]);
+          callResponse({});
         });
-    },
-    // 受け取ったデータをLeaflet用に整形
-    formatData: function(raw) {
-      const results = {};
-      raw.forEach(item => {
-        if(item.properties && item.geometry) {
-          const title = item.properties.title;
-          // 国土地理院のデータは [経度, 緯度] の順番で入っているため抽出
-          const lat = item.geometry.coordinates[1];
-          const lon = item.geometry.coordinates[0];
-          results[title] = L.latLng(lat, lon);
-        }
-      });
-      return results;
     },
     textPlaceholder: '地名 / 住所 / 施設名（例: 中津川駅）',
     collapsed: true, 
