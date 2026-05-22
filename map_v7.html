@@ -26,6 +26,17 @@
   }
   .search-tag{display:inline-block;margin:6px 6px 4px 6px;padding:2px 8px;border-radius:999px;font-size:12px;color:#fff;background:#e53935;line-height:1.4;vertical-align:middle;font-weight:bold;white-space:nowrap;}
   .leaflet-control-search .search-tip-list { max-height: 400px !important; }
+  
+  /* --- 新規追加：地図上のラベル（市町村名）のデザイン --- */
+  .city-label {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: #37474f;
+    font-size: 14px;
+    font-weight: bold;
+    text-shadow: 1px 1px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff; /* 白フチで見やすく */
+  }
 </style>
 </head>
 <body>
@@ -46,7 +57,6 @@ function loadScript(src){return new Promise((ok,ng)=>{const s=document.createEle
 function init(){
   const map = L.map('map').setView([35.5, 137.0], 11);
 
-  // --- 重なり順（ペイン）の設定 ---
   map.createPane('csPane');        map.getPane('csPane').style.zIndex = 410;
   map.createPane('boundaryPane');  map.getPane('boundaryPane').style.zIndex = 421;
   map.createPane('zonesPane');     map.getPane('zonesPane').style.zIndex = 428;
@@ -164,9 +174,9 @@ function init(){
     }
   });
 
-  // --- 面データレイヤー（旧市町村、大規模盛土、小学校区） ---
   const otherStyles = {
-    '旧市町村.geojson': {name: '旧市町村境界', color: '#546e7a', weight: 1.2, fillOpacity: 0.1, defaultOn: true},
+    // ★ここでラベルにする属性（labelField）を指定
+    '旧市町村.geojson': {name: '旧市町村境界', color: '#546e7a', weight: 1.2, fillOpacity: 0.1, defaultOn: true, labelField: 'city1'},
     '大規模盛土.geojson': {name: '大規模盛土（2023年）', color: '#d84315', fillOpacity: 0.2},
     '小学校区.geojson': {name: '小学校区（2023年）', color: '#2e7d32', dash: '5,5', fillOpacity: 0.1}
   };
@@ -178,14 +188,22 @@ function init(){
         onEachFeature: (f, l) => {
           let center = null; if (l.getBounds) center = l.getBounds().getCenter();
           l.bindPopup(makePopup(opt.name, f.properties, center));
+          
+          // ★ラベル設定（city1の中身を表示）
+          if (opt.labelField && f.properties && f.properties[opt.labelField]) {
+            l.bindTooltip(String(f.properties[opt.labelField]), {
+              permanent: true,
+              direction: 'center',
+              className: 'city-label'
+            });
+          }
         }
       });
-      if(opt.defaultOn) map.addLayer(l); // ★デフォルトで表示
+      if(opt.defaultOn) map.addLayer(l);
       ctl.addOverlay(l, opt.name);
     }).catch(()=>null);
   });
 
-  // 凡例
   const legend = L.control({position:'bottomright'});
   legend.onAdd = () => {
     const d = L.DomUtil.create('div','legend'); L.DomEvent.disableClickPropagation(d);
