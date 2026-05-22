@@ -15,12 +15,10 @@
 <style>
   html,body{height:100%;margin:0}
   #map{height:100%;background:#f3f3f3}
-  
   .legend{background:#fff;box-shadow:0 0 15px rgba(0,0,0,.2);border-radius:5px;}
   .legend-header{padding:8px 12px;cursor:pointer;font-weight:bold;font-size:14px;background:#f8f9fa;text-align:center;color:#333;border-radius:5px;}
   .legend-content{padding:8px 12px;line-height:22px;}
   .legend i{width:18px;height:18px;float:left;margin-right:8px;opacity:.9}
-  
   .map-icon {
     font-size: 18px; width: 30px; height: 30px; line-height: 30px; text-align: center;
     background: white; border-radius: 50%; border: 2px solid #333;
@@ -48,6 +46,7 @@ function loadScript(src){return new Promise((ok,ng)=>{const s=document.createEle
 function init(){
   const map = L.map('map').setView([35.5, 137.0], 11);
 
+  // --- 重なり順（ペイン）の設定 ---
   map.createPane('csPane');        map.getPane('csPane').style.zIndex = 410;
   map.createPane('boundaryPane');  map.getPane('boundaryPane').style.zIndex = 421;
   map.createPane('zonesPane');     map.getPane('zonesPane').style.zIndex = 428;
@@ -78,18 +77,15 @@ function init(){
   
   L.control.scale({position:'bottomleft',imperial:false}).addTo(map);
 
-  // 【修正】ポップアップ内にGoogleマップ・ストリートビューの連携ボタンを自動生成する機能を追加
   const makePopup = (title, props, latlng) => {
     let rows = Object.entries(props).map(([k,v])=> {
       if(k === '_searchKey') return ''; 
       return `<tr><th style="white-space:nowrap;padding-right:8px;border-bottom:1px solid #ccc;text-align:left;">${k}</th><td style="border-bottom:1px solid #ccc;">${v}</td></tr>`;
     }).join('');
 
-    // 座標がある場合、外部連携ボタンのHTMLを作成
     let extButtons = '';
     if (latlng) {
-      const lat = latlng.lat;
-      const lng = latlng.lng;
+      const lat = latlng.lat; const lng = latlng.lng;
       extButtons = `
         <div style="margin-top:12px; padding-top:8px; border-top:1px dashed #ccc; display:flex; gap:6px;">
           <a href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}" target="_blank" style="flex:1; text-align:center; background:#4285F4; color:white; padding:5px 0; border-radius:4px; text-decoration:none; font-size:11px; font-weight:bold;">
@@ -98,10 +94,8 @@ function init(){
           <a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="flex:1; text-align:center; background:#ea4335; color:white; padding:5px 0; border-radius:4px; text-decoration:none; font-size:11px; font-weight:bold;">
             <i class="fa-solid fa-street-view"></i> ｽﾄﾘｰﾄﾋﾞｭｰ
           </a>
-        </div>
-      `;
+        </div>`;
     }
-
     return `<b>${title}</b><br><div style="max-height:180px;overflow:auto;"><table style="border-collapse:collapse;font-size:12px;">${rows}</table></div>${extButtons}`;
   };
 
@@ -119,17 +113,13 @@ function init(){
           })});
         },
         onEachFeature: (f, l) => {
-          // ピン（点データ）の緯度経度を取得してポップアップに渡す
           let ptLatLng = null;
-          if (f.geometry && f.geometry.type === 'Point') {
-            ptLatLng = L.latLng(f.geometry.coordinates[1], f.geometry.coordinates[0]);
-          }
+          if (f.geometry && f.geometry.type === 'Point') { ptLatLng = L.latLng(f.geometry.coordinates[1], f.geometry.coordinates[0]); }
           l.bindPopup(makePopup(layerName, f.properties, ptLatLng));
         }
       });
       const cluster = L.markerClusterGroup({pane:'markersPane', disableClusteringAtZoom:15});
       cluster.addLayer(layer);
-      
       if(options.defaultOn) map.addLayer(cluster);
       ctl.addOverlay(cluster, layerName);
     } catch(e) { console.log(filename + " 読み込み失敗"); }
@@ -155,81 +145,50 @@ function init(){
         },
         onEachFeature: (f, l) => {
           const p = f.properties ?? {};
-          const d = {};
-          
-          const num = p['箇所番号'] || p.A33_004 || '';
-          const name = p['箇所名'] || p.A33_005 || '';
-          const addr = p['住所'] || p['所在地'] || p.A33_009 || '';
+          const num = p['箇所番号'] || p.A33_004 || ''; const name = p['箇所名'] || p.A33_005 || ''; const addr = p['住所'] || p['所在地'] || p.A33_009 || '';
           p._searchKey = `${num} ${name} ${addr}`.trim(); 
-
-          Object.entries(p).forEach(([k, v]) => {
-            if (k === '現象' || k === 'A33_001') {
-              let n = v;
-              if (v == 1) n='急傾斜'; if (v == 2) n='土石流'; if (v == 3) n='地すべり';
-              d['現象'] = n;
-            } else if (k === '区分' || k === 'A33_002') {
-              let n = v;
-              if (v == 1 || v == 3) n='イエローゾーン'; if (v == 2 || v == 4) n='レッドゾーン';
-              d['区分'] = n;
-            } else d[k] = v;
-          });
-
-          // ポリゴン（面データ）の中心点の緯度経度を計算してポップアップに渡す
-          let polyCenter = null;
-          if (l.getBounds) {
-            polyCenter = l.getBounds().getCenter();
-          }
-          l.bindPopup(makePopup('土砂災害（特別）警戒区域', d, polyCenter));
+          let polyCenter = null; if (l.getBounds) { polyCenter = l.getBounds().getCenter(); }
+          l.bindPopup(makePopup('土砂災害（特別）警戒区域', p, polyCenter));
         }
       }).addTo(map); 
       ctl.addOverlay(layer, '土砂災害（特別）警戒区域（2025年）');
 
       const searchCtrl = new L.Control.Search({
-        layer: layer,
-        propertyName: '_searchKey',
-        textPlaceholder: '箇所番号 / 箇所名 / 住所',
-        marker: false,
-        zoom: 16,
-        collapsed: window.innerWidth < 600,
-        initial: false 
+        layer: layer, propertyName: '_searchKey', textPlaceholder: '箇所番号 / 箇所名 / 住所',
+        marker: false, zoom: 16, collapsed: window.innerWidth < 600, initial: false 
       }).addTo(map);
-
-      searchCtrl.on('search:locationfound', function(e) {
-        if(e.layer.openPopup) e.layer.openPopup();
-      });
-
+      searchCtrl.on('search:locationfound', function(e) { if(e.layer.openPopup) e.layer.openPopup(); });
       const el = searchCtrl._container || searchCtrl.getContainer();
-      const tag = document.createElement('span'); 
-      tag.className = 'search-tag'; 
-      tag.textContent = '⚠️ 土砂災害検索'; 
+      const tag = document.createElement('span'); tag.className = 'search-tag'; tag.textContent = '⚠️ 土砂災害検索'; 
       (el.querySelector('form')||el).insertBefore(tag, el.firstChild);
     }
   });
 
+  // --- 面データレイヤー（旧市町村、大規模盛土、小学校区） ---
   const otherStyles = {
-    '大規模盛土.geojson': {name: '大規模盛土（2023年）', color: '#d84315'},
-    '小学校区.geojson': {name: '小学校区（2023年）', color: '#2e7d32', dash: '5,5'}
+    '旧市町村.geojson': {name: '旧市町村境界', color: '#546e7a', weight: 1.2, fillOpacity: 0.1, defaultOn: true},
+    '大規模盛土.geojson': {name: '大規模盛土（2023年）', color: '#d84315', fillOpacity: 0.2},
+    '小学校区.geojson': {name: '小学校区（2023年）', color: '#2e7d32', dash: '5,5', fillOpacity: 0.1}
   };
   Object.entries(otherStyles).forEach(([file, opt]) => {
     fetch('./' + file).then(r=>r.json()).then(data => {
       const l = L.geoJSON(data, {
-        pane: file.includes('区') ? 'boundaryPane' : 'zonesPane',
-        style: {color: opt.color, weight: 2, dashArray: opt.dash || '', fillOpacity: 0.2},
+        pane: file.includes('区') || file.includes('旧') ? 'boundaryPane' : 'zonesPane',
+        style: {color: opt.color, weight: opt.weight || 2, dashArray: opt.dash || '', fillOpacity: opt.fillOpacity || 0.2},
         onEachFeature: (f, l) => {
-          let otherCenter = null;
-          if (l.getBounds) otherCenter = l.getBounds().getCenter();
-          l.bindPopup(makePopup(opt.name, f.properties, otherCenter));
+          let center = null; if (l.getBounds) center = l.getBounds().getCenter();
+          l.bindPopup(makePopup(opt.name, f.properties, center));
         }
       });
+      if(opt.defaultOn) map.addLayer(l); // ★デフォルトで表示
       ctl.addOverlay(l, opt.name);
     }).catch(()=>null);
   });
 
+  // 凡例
   const legend = L.control({position:'bottomright'});
   legend.onAdd = () => {
-    const d = L.DomUtil.create('div','legend');
-    L.DomEvent.disableClickPropagation(d);
-
+    const d = L.DomUtil.create('div','legend'); L.DomEvent.disableClickPropagation(d);
     d.innerHTML = `
       <div class="legend-header" id="legend-header">▼ 凡例を閉じる</div>
       <div class="legend-content" id="legend-content">
@@ -239,42 +198,20 @@ function init(){
         🚌 バス停（2023年）<br>
         <i class="fa-solid fa-yen-sign" style="color:#e65100;"></i> 地価（2025年）<br>
         <i style="background:#ffff00;opacity:0.7;border:1px solid #cca300;"></i> 土砂災害：イエローゾーン<br>
-        <i style="background:#ff0000;opacity:0.7;border:1px solid #cc0000;"></i> 土砂災害：レッドゾーン
-      </div>
-    `;
-
-    const header = d.querySelector('#legend-header');
-    const content = d.querySelector('#legend-content');
-
+        <i style="background:#ff0000;opacity:0.7;border:1px solid #cc0000;"></i> 土砂災害：レッドゾーン<br>
+        <i style="background:transparent;border:1px solid #546e7a;"></i> 旧市町村境界（表示中）
+      </div>`;
+    const header = d.querySelector('#legend-header'); const content = d.querySelector('#legend-content');
     header.onclick = () => {
-      if (content.style.display === 'none') {
-        content.style.display = 'block';
-        header.innerText = '▼ 凡例を閉じる';
-        header.style.borderRadius = '5px 5px 0 0';
-        header.style.borderBottom = '1px solid #eee';
-      } else {
-        content.style.display = 'none';
-        header.innerText = '▲ 凡例を開く';
-        header.style.borderRadius = '5px';
-        header.style.borderBottom = 'none';
-      }
+      if (content.style.display === 'none') { content.style.display = 'block'; header.innerText = '▼ 凡例を閉じる'; } 
+      else { content.style.display = 'none'; header.innerText = '▲ 凡例を開く'; }
     };
-
-    if (window.innerWidth < 600) {
-      content.style.display = 'none';
-      header.innerText = '▲ 凡例を開く';
-      header.style.borderRadius = '5px';
-    } else {
-      header.style.borderRadius = '5px 5px 0 0';
-      header.style.borderBottom = '1px solid #eee';
-    }
-
+    if (window.innerWidth < 600) { content.style.display = 'none'; header.innerText = '▲ 凡例を開く'; }
     return d;
   };
   legend.addTo(map);
 
   if(L.control.locate){ L.control.locate({position:'topleft',flyTo:true,strings:{title:'現在地を表示'},locateOptions:{enableHighAccuracy:true}}).addTo(map); }
-
 }
 </script>
 </body>
