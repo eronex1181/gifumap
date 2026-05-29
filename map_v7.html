@@ -27,11 +27,12 @@
   .search-tag{display:inline-block;margin:6px 6px 4px 6px;padding:2px 8px;border-radius:999px;font-size:12px;color:#fff;background:#e53935;line-height:1.4;vertical-align:middle;font-weight:bold;white-space:nowrap;}
   .leaflet-control-search .search-tip-list { max-height: 400px !important; }
   
-  /* 旧市町村名のラベル用スタイル */
+  /* 旧市町村名のラベル用スタイル（白フチを強化して絶対に見やすく設定） */
   .city-label {
     background: transparent; border: none; box-shadow: none;
     color: #37474f; font-size: 14px; font-weight: bold;
-    text-shadow: 1px 1px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff;
+    text-shadow: 1px 1px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 0 0 4px #fff;
+    white-space: nowrap;
   }
 </style>
 </head>
@@ -171,30 +172,47 @@ function init(){
   });
 
   const otherStyles = {
-    // ★国土基本図郭から labelField の設定を削除して軽量化
     'PREF_岐阜県.geojson': {name: '国土基本図郭', color: '#0288d1', weight: 1.2, fillOpacity: 0.0},
+    // ★旧市町村にラベルの指示を残す
     '旧市町村.geojson': {name: '旧市町村境界', color: '#546e7a', weight: 1.2, fillOpacity: 0.1, defaultOn: true, labelField: 'city1', labelClass: 'city-label'},
     '大規模盛土.geojson': {name: '大規模盛土（2023年）', color: '#d84315', fillOpacity: 0.2},
     '小学校区.geojson': {name: '小学校区（2023年）', color: '#2e7d32', dash: '5,5', fillOpacity: 0.1}
   };
+  
   Object.entries(otherStyles).forEach(([file, opt]) => {
     fetch('./' + file).then(r=>r.json()).then(data => {
       const l = L.geoJSON(data, {
         pane: file.includes('区') || file.includes('旧') || file.includes('図郭') ? 'boundaryPane' : 'zonesPane',
         style: {color: opt.color, weight: opt.weight || 2, dashArray: opt.dash || '', fillOpacity: opt.fillOpacity !== undefined ? opt.fillOpacity : 0.2},
-        onEachFeature: (f, l) => {
-          let center = null; if (l.getBounds) center = l.getBounds().getCenter();
-          l.bindPopup(makePopup(opt.name, f.properties, center));
-          
-          if (opt.labelField && f.properties && f.properties[opt.labelField]) {
-            l.bindTooltip(String(f.properties[opt.labelField]), {
-              permanent: true,
-              direction: 'center',
-              className: opt.labelClass || 'city-label'
-            });
-          }
+        onEachFeature: (f, layer) => {
+          let center = null; if (layer.getBounds) center = layer.getBounds().getCenter();
+          layer.bindPopup(makePopup(opt.name, f.properties, center));
         }
       });
+
+      // ★【完全修正】ラベルを絶対に最前面に出す処理（文字ピンとして追加）
+      if (opt.labelField) {
+        l.eachLayer(layer => {
+          if (layer.feature && layer.feature.properties) {
+            // "city1"でも"City1"でも確実にデータを取得する
+            const key = Object.keys(layer.feature.properties).find(k => k.toLowerCase() === opt.labelField.toLowerCase());
+            const labelText = key ? layer.feature.properties[key] : null;
+
+            if (labelText && layer.getBounds) {
+              const center = layer.getBounds().getCenter();
+              // 透明なアイコンの中に文字だけを入れる
+              const labelIcon = L.divIcon({
+                className: opt.labelClass || 'city-label',
+                html: `<span style="position:relative; left:-50%;">${labelText}</span>`, // 綺麗に真ん中揃えにする
+                iconSize: [0, 0] 
+              });
+              // 最前面（markersPane）にタップ邪魔にならないよう（interactive: false）配置
+              L.marker(center, {icon: labelIcon, interactive: false, pane: 'markersPane'}).addTo(l);
+            }
+          }
+        });
+      }
+
       if(opt.defaultOn) map.addLayer(l);
       ctl.addOverlay(l, opt.name);
     }).catch(()=>null);
