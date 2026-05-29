@@ -33,13 +33,6 @@
     color: #37474f; font-size: 14px; font-weight: bold;
     text-shadow: 1px 1px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff;
   }
-  
-  /* 追加：国土基本図郭のラベル（ID番号）用スタイル */
-  .grid-label {
-    background: transparent; border: none; box-shadow: none;
-    color: #0288d1; font-size: 12px; font-weight: bold;
-    text-shadow: 1px 1px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff;
-  }
 </style>
 </head>
 <body>
@@ -178,8 +171,8 @@ function init(){
   });
 
   const otherStyles = {
-    // ★国土基本図郭を追加（デフォルトはOFF）
-    'PREF_岐阜県.geojson': {name: '国土基本図郭', color: '#0288d1', weight: 1.2, fillOpacity: 0.0, labelField: 'ID', labelClass: 'grid-label'},
+    // ★国土基本図郭から labelField の設定を削除して軽量化
+    'PREF_岐阜県.geojson': {name: '国土基本図郭', color: '#0288d1', weight: 1.2, fillOpacity: 0.0},
     '旧市町村.geojson': {name: '旧市町村境界', color: '#546e7a', weight: 1.2, fillOpacity: 0.1, defaultOn: true, labelField: 'city1', labelClass: 'city-label'},
     '大規模盛土.geojson': {name: '大規模盛土（2023年）', color: '#d84315', fillOpacity: 0.2},
     '小学校区.geojson': {name: '小学校区（2023年）', color: '#2e7d32', dash: '5,5', fillOpacity: 0.1}
