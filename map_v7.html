@@ -27,7 +27,7 @@
   .search-tag{display:inline-block;margin:6px 6px 4px 6px;padding:2px 8px;border-radius:999px;font-size:12px;color:#fff;background:#e53935;line-height:1.4;vertical-align:middle;font-weight:bold;white-space:nowrap;}
   .leaflet-control-search .search-tip-list { max-height: 400px !important; }
   
-  /* 旧市町村名のラベル用スタイル（白フチを強化して絶対に見やすく設定） */
+  /* 旧市町村名のラベル用スタイル */
   .city-label {
     background: transparent; border: none; box-shadow: none;
     color: #37474f; font-size: 14px; font-weight: bold;
@@ -125,10 +125,17 @@ function init(){
           l.bindPopup(makePopup(layerName, f.properties, ptLatLng));
         }
       });
-      const cluster = L.markerClusterGroup({pane:'markersPane', disableClusteringAtZoom:15});
-      cluster.addLayer(layer);
-      if(options.defaultOn) map.addLayer(cluster);
-      ctl.addOverlay(cluster, layerName);
+      
+      // クラスター処理が不要なレイヤーの場合を考慮
+      if (options.noCluster) {
+        if(options.defaultOn) map.addLayer(layer);
+        ctl.addOverlay(layer, layerName);
+      } else {
+        const cluster = L.markerClusterGroup({pane:'markersPane', disableClusteringAtZoom:15});
+        cluster.addLayer(layer);
+        if(options.defaultOn) map.addLayer(cluster);
+        ctl.addOverlay(cluster, layerName);
+      }
     } catch(e) { console.log(filename + " 読み込み失敗"); }
   };
 
@@ -173,10 +180,11 @@ function init(){
 
   const otherStyles = {
     'PREF_岐阜県.geojson': {name: '国土基本図郭', color: '#0288d1', weight: 1.2, fillOpacity: 0.0},
-    // ★旧市町村にラベルの指示を残す
     '旧市町村.geojson': {name: '旧市町村境界', color: '#546e7a', weight: 1.2, fillOpacity: 0.1, defaultOn: true, labelField: 'city1', labelClass: 'city-label'},
     '大規模盛土.geojson': {name: '大規模盛土（2023年）', color: '#d84315', fillOpacity: 0.2},
-    '小学校区.geojson': {name: '小学校区（2023年）', color: '#2e7d32', dash: '5,5', fillOpacity: 0.1}
+    '小学校区.geojson': {name: '小学校区（2023年）', color: '#2e7d32', dash: '5,5', fillOpacity: 0.1},
+    // ★追加：R7-01号概略調査箇所（紫色の少し太めの線・塗りつぶしで目立たせています）
+    'R7-01号概略調査箇所.geojson': {name: 'R7-01号概略調査箇所', color: '#8e24aa', weight: 3, fillOpacity: 0.3}
   };
   
   Object.entries(otherStyles).forEach(([file, opt]) => {
@@ -190,23 +198,19 @@ function init(){
         }
       });
 
-      // ★【完全修正】ラベルを絶対に最前面に出す処理（文字ピンとして追加）
       if (opt.labelField) {
         l.eachLayer(layer => {
           if (layer.feature && layer.feature.properties) {
-            // "city1"でも"City1"でも確実にデータを取得する
             const key = Object.keys(layer.feature.properties).find(k => k.toLowerCase() === opt.labelField.toLowerCase());
             const labelText = key ? layer.feature.properties[key] : null;
 
             if (labelText && layer.getBounds) {
               const center = layer.getBounds().getCenter();
-              // 透明なアイコンの中に文字だけを入れる
               const labelIcon = L.divIcon({
                 className: opt.labelClass || 'city-label',
-                html: `<span style="position:relative; left:-50%;">${labelText}</span>`, // 綺麗に真ん中揃えにする
+                html: `<span style="position:relative; left:-50%;">${labelText}</span>`,
                 iconSize: [0, 0] 
               });
-              // 最前面（markersPane）にタップ邪魔にならないよう（interactive: false）配置
               L.marker(center, {icon: labelIcon, interactive: false, pane: 'markersPane'}).addTo(l);
             }
           }
@@ -232,7 +236,8 @@ function init(){
         <i style="background:#ffff00;opacity:0.7;border:1px solid #cca300;"></i> 土砂災害：イエローゾーン<br>
         <i style="background:#ff0000;opacity:0.7;border:1px solid #cc0000;"></i> 土砂災害：レッドゾーン<br>
         <i style="background:transparent;border:1px solid #546e7a;"></i> 旧市町村境界<br>
-        <i style="background:transparent;border:1px solid #0288d1;"></i> 国土基本図郭
+        <i style="background:transparent;border:1px solid #0288d1;"></i> 国土基本図郭<br>
+        <i style="background:#8e24aa;opacity:0.3;border:2px solid #8e24aa;"></i> R7-01号概略調査箇所
       </div>`;
     const header = d.querySelector('#legend-header'); const content = d.querySelector('#legend-content');
     header.onclick = () => {
