@@ -126,16 +126,10 @@ function init(){
         }
       });
       
-      // クラスター処理が不要なレイヤーの場合を考慮
-      if (options.noCluster) {
-        if(options.defaultOn) map.addLayer(layer);
-        ctl.addOverlay(layer, layerName);
-      } else {
-        const cluster = L.markerClusterGroup({pane:'markersPane', disableClusteringAtZoom:15});
-        cluster.addLayer(layer);
-        if(options.defaultOn) map.addLayer(cluster);
-        ctl.addOverlay(cluster, layerName);
-      }
+      const cluster = L.markerClusterGroup({pane:'markersPane', disableClusteringAtZoom:15});
+      cluster.addLayer(layer);
+      if(options.defaultOn) map.addLayer(cluster);
+      ctl.addOverlay(cluster, layerName);
     } catch(e) { console.log(filename + " 読み込み失敗"); }
   };
 
@@ -183,8 +177,12 @@ function init(){
     '旧市町村.geojson': {name: '旧市町村境界', color: '#546e7a', weight: 1.2, fillOpacity: 0.1, defaultOn: true, labelField: 'city1', labelClass: 'city-label'},
     '大規模盛土.geojson': {name: '大規模盛土（2023年）', color: '#d84315', fillOpacity: 0.2},
     '小学校区.geojson': {name: '小学校区（2023年）', color: '#2e7d32', dash: '5,5', fillOpacity: 0.1},
-    // ★追加：R7-01号概略調査箇所（紫色の少し太めの線・塗りつぶしで目立たせています）
-    'R7-01号概略調査箇所.geojson': {name: 'R7-01号概略調査箇所', color: '#8e24aa', weight: 3, fillOpacity: 0.3}
+    'R7-01号概略調査箇所.geojson': {name: 'R7-01号概略調査箇所', color: '#8e24aa', weight: 3, fillOpacity: 0.3},
+    
+    // ★ 今回追加の3データ（線のみ表示のため fillOpacity を 0 にしています）
+    '@50m.geojson': {name: '急傾斜地追加図化案', color: 'black', weight: 2, fillOpacity: 0.0},
+    '@kibanzuwaku.geojson': {name: '砂防基盤図枠', color: 'red', weight: 2, fillOpacity: 0.0},
+    '@tatemono.geojson': {name: '砂防基盤図建物', color: 'green', weight: 2, fillOpacity: 0.0}
   };
   
   Object.entries(otherStyles).forEach(([file, opt]) => {
@@ -237,7 +235,10 @@ function init(){
         <i style="background:#ff0000;opacity:0.7;border:1px solid #cc0000;"></i> 土砂災害：レッドゾーン<br>
         <i style="background:transparent;border:1px solid #546e7a;"></i> 旧市町村境界<br>
         <i style="background:transparent;border:1px solid #0288d1;"></i> 国土基本図郭<br>
-        <i style="background:#8e24aa;opacity:0.3;border:2px solid #8e24aa;"></i> R7-01号概略調査箇所
+        <i style="background:#8e24aa;opacity:0.3;border:2px solid #8e24aa;"></i> R7-01号概略調査箇所<br>
+        <i style="background:transparent;border:2px solid black;"></i> 急傾斜地追加図化案<br>
+        <i style="background:transparent;border:2px solid red;"></i> 砂防基盤図枠<br>
+        <i style="background:transparent;border:2px solid green;"></i> 砂防基盤図建物
       </div>`;
     const header = d.querySelector('#legend-header'); const content = d.querySelector('#legend-content');
     header.onclick = () => {
