@@ -185,38 +185,48 @@ function init(){
   };
   
   Object.entries(otherStyles).forEach(([file, opt]) => {
-    fetch('./' + file).then(r=>r.json()).then(data => {
-      const l = L.geoJSON(data, {
-        pane: file.includes('区') || file.includes('旧') || file.includes('図郭') ? 'boundaryPane' : 'zonesPane',
-        style: {color: opt.color, weight: opt.weight || 2, dashArray: opt.dash || '', fillOpacity: opt.fillOpacity !== undefined ? opt.fillOpacity : 0.2},
-        onEachFeature: (f, layer) => {
-          let center = null; if (layer.getBounds) center = layer.getBounds().getCenter();
-          layer.bindPopup(makePopup(opt.name, f.properties, center));
-        }
-      });
-
-      if (opt.labelField) {
-        l.eachLayer(layer => {
-          if (layer.feature && layer.feature.properties) {
-            const key = Object.keys(layer.feature.properties).find(k => k.toLowerCase() === opt.labelField.toLowerCase());
-            const labelText = key ? layer.feature.properties[key] : null;
-
-            if (labelText && layer.getBounds) {
-              const center = layer.getBounds().getCenter();
-              const labelIcon = L.divIcon({
-                className: opt.labelClass || 'city-label',
-                html: `<span style="position:relative; left:-50%;">${labelText}</span>`,
-                iconSize: [0, 0] 
-              });
-              L.marker(center, {icon: labelIcon, interactive: false, pane: 'markersPane'}).addTo(l);
-            }
-          }
-        });
+    // 先に空レイヤーをレイヤー一覧へ登録する。
+    // 大きいGeoJSONの読み込み中でもチェック項目がすぐ表示されるようにする。
+    const l = L.geoJSON(null, {
+      pane: file.includes('区') || file.includes('旧') || file.includes('図郭') ? 'boundaryPane' : 'zonesPane',
+      style: {color: opt.color, weight: opt.weight || 2, dashArray: opt.dash || '', fillOpacity: opt.fillOpacity !== undefined ? opt.fillOpacity : 0.2},
+      onEachFeature: (f, layer) => {
+        let center = null; if (layer.getBounds) center = layer.getBounds().getCenter();
+        layer.bindPopup(makePopup(opt.name, f.properties, center));
       }
+    });
 
-      if(opt.defaultOn) map.addLayer(l);
-      ctl.addOverlay(l, opt.name);
-    }).catch(()=>null);
+    if(opt.defaultOn) map.addLayer(l);
+    ctl.addOverlay(l, opt.name);
+
+    fetch('./' + encodeURI(file), {cache:'no-store'})
+      .then(r => {
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        return r.json();
+      })
+      .then(data => {
+        l.addData(data);
+
+        if (opt.labelField) {
+          l.eachLayer(layer => {
+            if (layer.feature && layer.feature.properties) {
+              const key = Object.keys(layer.feature.properties).find(k => k.toLowerCase() === opt.labelField.toLowerCase());
+              const labelText = key ? layer.feature.properties[key] : null;
+
+              if (labelText && layer.getBounds) {
+                const center = layer.getBounds().getCenter();
+                const labelIcon = L.divIcon({
+                  className: opt.labelClass || 'city-label',
+                  html: `<span style="position:relative; left:-50%;">${labelText}</span>`,
+                  iconSize: [0, 0]
+                });
+                L.marker(center, {icon: labelIcon, interactive: false, pane: 'markersPane'}).addTo(l);
+              }
+            }
+          });
+        }
+      })
+      .catch(e => console.error(file + ' 読み込み失敗:', e));
   });
 
   const legend = L.control({position:'bottomright'});
