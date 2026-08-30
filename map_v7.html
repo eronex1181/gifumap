@@ -118,10 +118,20 @@ function init(){
     {minZoom:8,maxNativeZoom:16,maxZoom:28,attribution:'© 今昔マップ on the web'}
   );
 
-  // 岐阜県CS立体図：元タイルの最大ズームを超えても拡大表示を継続
+  // 岐阜県CS立体図
+  // 岐阜県森林研究所が公開するArcGISキャッシュサービスを利用。
+  // ArcGIS RESTのタイル順は /tile/{z}/{y}/{x}
+  // ネイティブはZ18まで。Z19以降はLeaflet側で拡大表示する。
   const baseGifu=L.tileLayer(
-    'https://forestgeo.info/opendata/21_gifu/csmap_2023/{z}/{x}/{y}.webp',
-    {minZoom:2,maxNativeZoom:18,maxZoom:28,opacity:.60,pane:'csPane',attribution:'© 岐阜県'}
+    'https://tiles.arcgis.com/tiles/jJQWqgqiNhLLjkin/arcgis/rest/services/Gifu2021CS_Mosic/MapServer/tile/{z}/{y}/{x}',
+    {
+      minZoom:8,
+      maxNativeZoom:18,
+      maxZoom:28,
+      opacity:.78,
+      pane:'csPane',
+      attribution:'岐阜県森林研究所・CS立体図'
+    }
   );
 
   // ---------- Water hazards 1–6 ----------
@@ -161,7 +171,7 @@ function init(){
 
   const overlays={
     ...backgroundMaps,
-    '岐阜県CS立体図（2023年）':baseGifu,
+    '岐阜県CS立体図（岐阜県森林研究所）':baseGifu,
     '① 洪水浸水想定区域（想定最大規模）':floodL2,
     '② 家屋倒壊等氾濫想定区域（氾濫流）':houseFlood,
     '③ 家屋倒壊等氾濫想定区域（河岸侵食）':houseErosion,
